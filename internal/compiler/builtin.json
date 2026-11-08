@@ -1,0 +1,203 @@
+{
+ "cluster": "builtin",
+ "label": "Core",
+ "description": "Code-backed platform primitives: triggers, agents, generic tools, control flow, outputs. Executed by apps/reasoner/reasoner/nodes.py, not the generic integration runtime.",
+ "nodes": [
+  {
+   "id": "trigger.manual",
+   "label": "Manual trigger",
+   "description": "Start the workflow on demand; seeds the run input downstream.",
+   "kind": "trigger",
+   "runtime": "builtin",
+   "search": "start manual run on demand trigger begin",
+   "config": [],
+   "outputs": [
+    "input"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "trigger.schedule",
+   "label": "Schedule trigger",
+   "description": "Run on a cron schedule (e.g. every weekday at 9am).",
+   "kind": "trigger",
+   "runtime": "builtin",
+   "search": "schedule cron daily hourly recurring timer trigger",
+   "config": [
+    {
+     "key": "cron",
+     "label": "Cron",
+     "control": "text",
+     "required": false,
+     "placeholder": "0 9 * * 1-5"
+    }
+   ],
+   "outputs": [
+    "input"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "agent.llm",
+   "label": "AI agent",
+   "description": "Reason over upstream outputs with a large language model. The workhorse for research, synthesis, extraction, transformation and summarization.",
+   "kind": "action",
+   "runtime": "builtin",
+   "search": "ai llm agent reason summarize synthesize extract classify write analyze transform parse",
+   "config": [
+    {
+     "key": "system",
+     "label": "System prompt",
+     "control": "textarea",
+     "required": false
+    },
+    {
+     "key": "prompt",
+     "label": "Prompt",
+     "control": "textarea",
+     "required": true,
+     "help": "Supports {{input.x}} and {{outputs.key.field}}"
+    }
+   ],
+   "outputs": [
+    "text",
+    "model"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "tool.http",
+   "label": "HTTP request",
+   "description": "Call any public URL. Carries no stored credentials; imported API nodes do.",
+   "kind": "action",
+   "runtime": "builtin",
+   "search": "http api rest get post fetch request call url json rss feed",
+   "config": [
+    {
+     "key": "method",
+     "label": "Method",
+     "control": "select",
+     "required": false,
+     "options": [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE"
+     ]
+    },
+    {
+     "key": "url",
+     "label": "URL",
+     "control": "text",
+     "required": true
+    },
+    {
+     "key": "headers",
+     "label": "Headers (JSON)",
+     "control": "textarea",
+     "required": false
+    },
+    {
+     "key": "body",
+     "label": "Body",
+     "control": "textarea",
+     "required": false
+    }
+   ],
+   "outputs": [
+    "status",
+    "body"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "logic.branch",
+   "label": "If / Else",
+   "description": "Gate: evaluate a condition; when false, the entire downstream subgraph is skipped.",
+   "kind": "logic",
+   "runtime": "builtin",
+   "search": "if else branch condition gate compare decide",
+   "config": [
+    {
+     "key": "condition",
+     "label": "Condition",
+     "control": "text",
+     "required": true,
+     "placeholder": "outputs.fetch.status == 200"
+    }
+   ],
+   "outputs": [
+    "passed",
+    "condition"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "logic.filter",
+   "label": "Filter",
+   "description": "Gate: pass the flow through only when the condition holds; otherwise skip downstream.",
+   "kind": "logic",
+   "runtime": "builtin",
+   "search": "filter condition keep when rule gate",
+   "config": [
+    {
+     "key": "condition",
+     "label": "Keep when",
+     "control": "text",
+     "required": true
+    }
+   ],
+   "outputs": [
+    "passed",
+    "condition"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "logic.loop",
+   "label": "Loop",
+   "description": "Fan out: resolve a list and run the downstream branch once per item. Inside the body, {{item}} is the current element and {{loop.<key>.index}} the position; collected results appear as outputs.<key>.results.",
+   "kind": "logic",
+   "runtime": "builtin",
+   "search": "loop foreach iterate items map fan out each repeat",
+   "config": [
+    {
+     "key": "items",
+     "label": "Items expression",
+     "control": "text",
+     "required": true,
+     "placeholder": "outputs.fetch.items"
+    }
+   ],
+   "outputs": [
+    "items",
+    "count",
+    "results"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "logic.approval",
+   "label": "Human approval",
+   "description": "Pause the run until a person approves. If rejected, everything downstream is skipped.",
+   "kind": "logic",
+   "runtime": "builtin",
+   "search": "approval review human confirm sign off pause gate",
+   "config": [
+    {
+     "key": "message",
+     "label": "What to review",
+     "control": "textarea",
+     "required": true,
+     "help": "Supports {{input.x}} and {{outputs.key.field}}"
+    }
+   ],
+   "outputs": [
+    "approved",
+    "note"
+   ],
+   "credentials": []
+  }
+ ]
+}

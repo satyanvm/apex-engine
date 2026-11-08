@@ -1,0 +1,50 @@
+# Local stack: docker compose up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: apex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: apex
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d apex"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: apex
+      POSTGRES_PWD: ${POSTGRES_PASSWORD}
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+  engine:
+    build: .
+    environment:
+      DATABASE_URL: postgres://apex:${POSTGRES_PASSWORD}@postgres:5432/apex
+      TEMPORAL_HOSTPORT: temporal:7233
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      APEX_SECRET_KEY: ${APEX_SECRET_KEY:?set APEX_SECRET_KEY in .env}
+      APEX_API_KEYS: ${APEX_API_KEYS:?set APEX_API_KEYS in .env}
+      PLANNER_MAP_MODEL: ${PLANNER_MAP_MODEL:-gemini-3.1-flash-lite}
+      PLANNER_MODEL: ${PLANNER_MODEL:-gemini-3.5-flash}
+      APEX_COMPILE_RPM: ${APEX_COMPILE_RPM:-30}
+      APEX_ALLOW_PRIVATE_NETWORK: ${APEX_ALLOW_PRIVATE_NETWORK:-0}
+    depends_on:
+      postgres: { condition: service_healthy }
+      temporal: { condition: service_started }
+    ports:
+      - "127.0.0.1:${APEX_PORT:-8700}:8700"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

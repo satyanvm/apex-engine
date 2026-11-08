@@ -1,0 +1,20 @@
+# Production overlay: only Caddy is published, with automatic HTTPS.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  engine:
+    ports: !reset []
+  caddy:
+    image: caddy:2.10-alpine
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN in .env} --to engine:8700
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [engine]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
