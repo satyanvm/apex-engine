@@ -18,7 +18,7 @@ jobs:
         with: { go-version-file: go.mod }
       - run: go vet -tags integration ./...
       - run: go test ./...
-      - uses: temporalio/setup-temporal@v0
+      - uses: temporalio/setup-temporal@v0.1.0
       - run: |
           temporal server start-dev --headless --port 7233 --log-level error &
           sleep 8
