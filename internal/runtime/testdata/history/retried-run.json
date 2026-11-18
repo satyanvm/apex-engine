@@ -1,0 +1,684 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-11-18T14:18:38.805113Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1050782",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "RunWorkflow"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJSdW5JRCI6InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAiLCJUZW5hbnQiOiJmaXh0dXJlNDkyOSIsIk5vZGVzIjpbeyJrZXkiOiJzdGFydCIsInR5cGUiOiJ0cmlnZ2VyLm1hbnVhbCIsIm5hbWUiOiIiLCJkZXBlbmRzT24iOltdLCJjb25maWciOnt9LCJjb2wiOjAsInJvdyI6MH0seyJrZXkiOiJmaXJzdCIsInR5cGUiOiJhcGkuZml4dHVyZS5nZXRPbmUiLCJuYW1lIjoiIiwiZGVwZW5kc09uIjpbInN0YXJ0Il0sImNvbmZpZyI6eyJpZCI6ImZpcnN0In0sImNvbCI6MCwicm93IjowfSx7ImtleSI6Imxhc3QiLCJ0eXBlIjoiYXBpLmZpeHR1cmUuZ2V0T25lIiwibmFtZSI6IiIsImRlcGVuZHNPbiI6WyJmaXJzdCJdLCJjb25maWciOnsiaWQiOiJyZXRyeSJ9LCJjb2wiOjAsInJvdyI6MH1dLCJJbnB1dCI6e30sIkNhdGFsb2dJRHMiOlsiY2F0Xzk1ZTFkYzdlM2E1NzkwMTQ1YTY5ZTg2NCJdLCJOYW1lIjoiIiwiV29ya2Zsb3dSZWYiOiIiLCJDYWxsYmFja1VSTCI6IiIsIlJlc3VtZU9mIjoicnVuXzlmMzYwOGE2ODAzOGM1YzJlMGE1MzlmMCIsIklkZW1Sb290IjoicnVuXzlmMzYwOGE2ODAzOGM1YzJlMGE1MzlmMCIsIlByZXZpZXciOmZhbHNlfQ=="
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "01a1ef06-2155-71b9-9640-74aa14c8f4f4",
+        "identity": "1@fixture-worker@",
+        "firstExecutionRunId": "01a1ef06-2155-71b9-9640-74aa14c8f4f4",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "apex-run-run_c91a92f65075c3c0282d75b0"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-11-18T14:18:38.805153Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050783",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-11-18T14:18:38.806447Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050788",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "1@fixture-worker@",
+        "requestId": "fb5606e6-c722-4964-a043-0b9f0fd02c60",
+        "historySizeBytes": "906",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-11-18T14:18:38.807841Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050793",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.45.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-11-18T14:18:38.807866Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1050794",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "5",
+        "activityType": {
+          "name": "MarkRunStarted"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAi"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "4",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 8
+        },
+        "useWorkflowBuildId": true
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-11-18T14:18:38.807888Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1050798",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "5",
+        "identity": "1@fixture-worker@",
+        "requestId": "acbcc3dc-91b5-4231-80a0-9289b22db203",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-11-18T14:18:38.809072Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1050799",
+      "activityTaskCompletedEventAttributes": {
+        "scheduledEventId": "5",
+        "startedEventId": "6",
+        "identity": "1@fixture-worker@"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-11-18T14:18:38.809077Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050800",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "fixture-host:8969011b-470c-4372-abeb-793850fe8b30",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "apex-engine"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-11-18T14:18:38.809625Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050804",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "1@fixture-worker@",
+        "requestId": "80524b34-1941-43d6-9738-5af7570283ef",
+        "historySizeBytes": "1646",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-11-18T14:18:38.810693Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050809",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "8",
+        "startedEventId": "9",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-11-18T14:18:38.810708Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1050810",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "11",
+        "activityType": {
+          "name": "ExecuteNode"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJSdW5JRCI6InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAiLCJUZW5hbnQiOiJmaXh0dXJlNDkyOSIsIk5vZGUiOnsia2V5Ijoic3RhcnQiLCJ0eXBlIjoidHJpZ2dlci5tYW51YWwiLCJuYW1lIjoiIiwiZGVwZW5kc09uIjpbXSwiY29uZmlnIjp7fSwiY29sIjowLCJyb3ciOjB9LCJJbnB1dCI6e30sIlVwc3RyZWFtIjp7fSwiSGFzSXRlbSI6ZmFsc2UsIkl0ZW0iOm51bGwsIkluZGV4IjowLCJMb29wIjpudWxsLCJDYXRhbG9nSURzIjpbImNhdF85NWUxZGM3ZTNhNTc5MDE0NWE2OWU4NjQiXSwiUmVzdW1lT2YiOiJydW5fOWYzNjA4YTY4MDM4YzVjMmUwYTUzOWYwIiwiSWRlbVJvb3QiOiJydW5fOWYzNjA4YTY4MDM4YzVjMmUwYTUzOWYwIiwiQXBwcm92YWxUb2tlbiI6IiIsIlByZXZpZXciOmZhbHNlfQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "600s",
+        "heartbeatTimeout": "15s",
+        "workflowTaskCompletedEventId": "10",
+        "retryPolicy": {
+          "initialInterval": "2s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "200s",
+          "maximumAttempts": 3
+        },
+        "useWorkflowBuildId": true
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-11-18T14:18:38.810718Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1050813",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "1@fixture-worker@",
+        "requestId": "db9e1d86-f140-4c58-b0b0-58c26d49b108",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-11-18T14:18:38.812317Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1050814",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJPdXRwdXQiOnsiaW5wdXQiOnt9fSwiUGFzc2VkIjp0cnVlLCJSZXVzZWQiOnRydWV9"
+            }
+          ]
+        },
+        "scheduledEventId": "11",
+        "startedEventId": "12",
+        "identity": "1@fixture-worker@"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-11-18T14:18:38.812322Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050815",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "fixture-host:8969011b-470c-4372-abeb-793850fe8b30",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "apex-engine"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-11-18T14:18:38.812904Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050819",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "1@fixture-worker@",
+        "requestId": "58b1a3c2-ec71-47ed-80aa-c1d3ec554668",
+        "historySizeBytes": "2822",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-11-18T14:18:38.813958Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050824",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "14",
+        "startedEventId": "15",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-11-18T14:18:38.813973Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1050825",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "17",
+        "activityType": {
+          "name": "ExecuteNode"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJSdW5JRCI6InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAiLCJUZW5hbnQiOiJmaXh0dXJlNDkyOSIsIk5vZGUiOnsia2V5IjoiZmlyc3QiLCJ0eXBlIjoiYXBpLmZpeHR1cmUuZ2V0T25lIiwibmFtZSI6IiIsImRlcGVuZHNPbiI6WyJzdGFydCJdLCJjb25maWciOnsiaWQiOiJmaXJzdCJ9LCJjb2wiOjAsInJvdyI6MH0sIklucHV0Ijp7fSwiVXBzdHJlYW0iOnsic3RhcnQiOnsiaW5wdXQiOnt9fX0sIkhhc0l0ZW0iOmZhbHNlLCJJdGVtIjpudWxsLCJJbmRleCI6MCwiTG9vcCI6bnVsbCwiQ2F0YWxvZ0lEcyI6WyJjYXRfOTVlMWRjN2UzYTU3OTAxNDVhNjllODY0Il0sIlJlc3VtZU9mIjoicnVuXzlmMzYwOGE2ODAzOGM1YzJlMGE1MzlmMCIsIklkZW1Sb290IjoicnVuXzlmMzYwOGE2ODAzOGM1YzJlMGE1MzlmMCIsIkFwcHJvdmFsVG9rZW4iOiIiLCJQcmV2aWV3IjpmYWxzZX0="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "600s",
+        "heartbeatTimeout": "15s",
+        "workflowTaskCompletedEventId": "16",
+        "retryPolicy": {
+          "initialInterval": "2s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "200s",
+          "maximumAttempts": 3
+        },
+        "useWorkflowBuildId": true
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2026-11-18T14:18:38.813982Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1050828",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "17",
+        "identity": "1@fixture-worker@",
+        "requestId": "af998f05-2f8f-46d2-b78b-62374ee886a4",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2026-11-18T14:18:38.814942Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1050829",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJPdXRwdXQiOnsiYm9keSI6eyJvayI6dHJ1ZX0sInN0YXR1cyI6MjAwfSwiUGFzc2VkIjp0cnVlLCJSZXVzZWQiOnRydWV9"
+            }
+          ]
+        },
+        "scheduledEventId": "17",
+        "startedEventId": "18",
+        "identity": "1@fixture-worker@"
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2026-11-18T14:18:38.814946Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050830",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "fixture-host:8969011b-470c-4372-abeb-793850fe8b30",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "apex-engine"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2026-11-18T14:18:38.815419Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050834",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "1@fixture-worker@",
+        "requestId": "25975836-3258-47c7-9614-f982147e0cc7",
+        "historySizeBytes": "4063",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2026-11-18T14:18:38.816406Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050839",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "20",
+        "startedEventId": "21",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2026-11-18T14:18:38.816417Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1050840",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "23",
+        "activityType": {
+          "name": "ExecuteNode"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJSdW5JRCI6InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAiLCJUZW5hbnQiOiJmaXh0dXJlNDkyOSIsIk5vZGUiOnsia2V5IjoibGFzdCIsInR5cGUiOiJhcGkuZml4dHVyZS5nZXRPbmUiLCJuYW1lIjoiIiwiZGVwZW5kc09uIjpbImZpcnN0Il0sImNvbmZpZyI6eyJpZCI6InJldHJ5In0sImNvbCI6MCwicm93IjowfSwiSW5wdXQiOnt9LCJVcHN0cmVhbSI6eyJmaXJzdCI6eyJib2R5Ijp7Im9rIjp0cnVlfSwic3RhdHVzIjoyMDB9fSwiSGFzSXRlbSI6ZmFsc2UsIkl0ZW0iOm51bGwsIkluZGV4IjowLCJMb29wIjpudWxsLCJDYXRhbG9nSURzIjpbImNhdF85NWUxZGM3ZTNhNTc5MDE0NWE2OWU4NjQiXSwiUmVzdW1lT2YiOiJydW5fOWYzNjA4YTY4MDM4YzVjMmUwYTUzOWYwIiwiSWRlbVJvb3QiOiJydW5fOWYzNjA4YTY4MDM4YzVjMmUwYTUzOWYwIiwiQXBwcm92YWxUb2tlbiI6IiIsIlByZXZpZXciOmZhbHNlfQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "600s",
+        "heartbeatTimeout": "15s",
+        "workflowTaskCompletedEventId": "22",
+        "retryPolicy": {
+          "initialInterval": "2s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "200s",
+          "maximumAttempts": 3
+        },
+        "useWorkflowBuildId": true
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2026-11-18T14:18:38.816425Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1050843",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "23",
+        "identity": "1@fixture-worker@",
+        "requestId": "3aa16b0c-5eb9-4308-825c-da60007c2d33",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2026-11-18T14:18:38.818391Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1050844",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJPdXRwdXQiOnsiYm9keSI6eyJvayI6dHJ1ZX0sInN0YXR1cyI6MjAwfSwiUGFzc2VkIjpmYWxzZSwiUmV1c2VkIjpmYWxzZX0="
+            }
+          ]
+        },
+        "scheduledEventId": "23",
+        "startedEventId": "24",
+        "identity": "1@fixture-worker@"
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2026-11-18T14:18:38.818394Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050845",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "fixture-host:8969011b-470c-4372-abeb-793850fe8b30",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "apex-engine"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2026-11-18T14:18:38.818864Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050849",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "1@fixture-worker@",
+        "requestId": "59f8b445-2f0e-4b44-8159-42619c2d2bc9",
+        "historySizeBytes": "5326",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2026-11-18T14:18:38.819848Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050854",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "26",
+        "startedEventId": "27",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2026-11-18T14:18:38.819857Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1050855",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "29",
+        "activityType": {
+          "name": "FinishRun"
+        },
+        "taskQueue": {
+          "name": "apex-engine",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJSdW5JRCI6InJ1bl9jOTFhOTJmNjUwNzVjM2MwMjgyZDc1YjAiLCJTdGF0dXMiOiJzdWNjZWVkZWQiLCJFcnJvciI6IiJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "0s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "28",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 8
+        },
+        "useWorkflowBuildId": true
+      }
+    },
+    {
+      "eventId": "30",
+      "eventTime": "2026-11-18T14:18:38.819866Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId": "1050858",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "29",
+        "identity": "1@fixture-worker@",
+        "requestId": "9b4542fc-52e4-45e2-aa04-d65a4805016b",
+        "attempt": 1,
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "31",
+      "eventTime": "2026-11-18T14:18:38.821234Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId": "1050859",
+      "activityTaskCompletedEventAttributes": {
+        "scheduledEventId": "29",
+        "startedEventId": "30",
+        "identity": "1@fixture-worker@"
+      }
+    },
+    {
+      "eventId": "32",
+      "eventTime": "2026-11-18T14:18:38.821237Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050860",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "fixture-host:8969011b-470c-4372-abeb-793850fe8b30",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "apex-engine"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "33",
+      "eventTime": "2026-11-18T14:18:38.861083Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050864",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "1@fixture-worker@",
+        "requestId": "67e8ec78-2202-4be7-a45b-7a2bc003e466",
+        "historySizeBytes": "6080",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        }
+      }
+    },
+    {
+      "eventId": "34",
+      "eventTime": "2026-11-18T14:18:38.862289Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050868",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "32",
+        "startedEventId": "33",
+        "identity": "1@fixture-worker@",
+        "workerVersion": {
+          "buildId": "7f6cc8349a7f30ce6f2ebc4db3e86a4b"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "35",
+      "eventTime": "2026-11-18T14:18:38.862307Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1050869",
+      "workflowExecutionCompletedEventAttributes": {
+        "workflowTaskCompletedEventId": "34"
+      }
+    }
+  ]
+}

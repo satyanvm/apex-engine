@@ -351,8 +351,9 @@ applied to workflows.
    console only shows it.
 5. **Only a Go client.** Most software companies' backends are TypeScript or
    Python.
-6. **Upgrades are not safe while runs are in progress.** Every time a company
-   embedding the engine deploys, it upgrades the engine, so this matters.
+6. **Worker upgrades require replay compatibility.** A pending approval
+   survived a binary replacement. Contributors patch command changes with
+   Temporal version markers and replay recorded runs in CI.
 7. **The name collides.**
    - "APEX engine" is already a game engine with modding tools on GitHub.
    - Salesforce's programming language is called Apex.

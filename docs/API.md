@@ -250,6 +250,10 @@ dozen steps. Read the diff: a weak model may change more than it was asked to.
 
 ## Runs: durable execution
 
+Run IDs and approval endpoints stay the same when workers are replaced. The
+DAG runner pins its command path in Temporal history so a compatible worker
+can finish a run started by an earlier engine.
+
     POST /v1/runs {"dag":Dag,"catalogIds":[...],"input":{...},"idempotencyKey?":"...","name?":"...","callbackUrl?":"...","preview?":true}
       -> 202 Run
 

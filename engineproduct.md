@@ -4,7 +4,7 @@ How apex-engine gets used by an organisation, what stood in the way of that, and
 what was done about it. Part 1 is the product view. Part 2 is the engineering
 log of the earlier work.
 
-Nothing here is committed. Everything is in the working tree.
+Parts 1 and 2 were saved on `safe/product-layer-2026-11-18`. Part 3 records work on `feat/close-eight-gaps`.
 
 # Part 1: the product view (2026-11-12)
 
@@ -148,21 +148,17 @@ The product team's security and legal people ask the same four questions.
 ### 7. Day 30 and after
 
 - *Was there:* metrics, an audit log, crash recovery, retry.
-- *Still in the way:* upgrades. See the next section.
+- *Now:* open runs can survive a worker upgrade that follows the [workflow versioning rule](#2-safe-upgrades-with-runs-in-flight).
 
 ## What is still in the way
 
-These were found on the same walk and are not fixed. They are in the order I
-would do them.
+These gaps were found on the same walk. Part 3 records what shipped and how it was verified.
 
 1. **Nobody has measured compile quality on a model an organisation would
    use.** Everything here ran on a local 8B model, on cases the checks were
    written from. Step 4 is the product, and its hit rate on a hosted model is
    unknown. It needs an API key this machine does not have.
-2. **Upgrading with runs in flight is not safe.** The workflow code has no
-   versioning, so a run that is waiting for an approval across an engine
-   upgrade may not resume. An embedded engine is upgraded every time the host
-   product deploys. This will bite the first serious adopter.
+2. **Fixed. Safe upgrades with runs in flight.** A pending approval finished across a binary swap, and eight Temporal histories replay in CI. [Verification](#2-safe-upgrades-with-runs-in-flight)
 3. **Only Go has a client.** Most product backends that would embed this are
    TypeScript or Python. The OpenAPI contract is complete and tested against
    the routes, but I did not run a generator over it, so "generate a client"
@@ -586,3 +582,36 @@ the integration tests use.
 4. **A TypeScript client**, generated from the contract and tested.
 5. **Run the Docker stack once** (`./apex up`, `./apex pieces`), and connect
    one real OAuth provider and one real piece with an account.
+
+# Part 3: closing the eight
+
+## 2. Safe upgrades with runs in flight
+
+- A product can replace the engine while its customers have runs waiting for a decision.
+- Record a Temporal patch version before the first command of the shared DAG runner.
+- Histories without a marker use Temporal's default version and keep the original commands.
+- GetVersion works for embedded workers on the existing queue without deployment infrastructure.
+- Keep an existing branch when changing command order, timers, signals or workflow inputs.
+- Record histories from the saved binary and replay them in the ordinary Go test suite.
+- Stop the saved binary with an approval outstanding and finish it through the replacement.
+
+The runner now records `apex-run` version 1. Version 1 and pre-marker
+histories emit the same business commands. The README explains how future
+changes keep compatibility, including schedule setup before the DAG runner.
+
+- Replayed eight recorded histories in ordinary Go tests. The pending
+  approval has 29 events, the loop 65, the retried run 35, the preview 53,
+  the schedule 42, the durable wait 40, the completed upgraded approval 59
+  and the versioned approval 61. The fixtures use only local test data.
+- Built `0d7620a` from the safety branch, then started an approval through
+  `apexctl run --wait --stop-at-approval` (exit 3). Stopped that engine with
+  `TimerStarted` in the history. Started the new binary on the same Postgres
+  and Temporal, and approved through `apexctl approve`. The same run
+  reached `succeeded`, with `decidedBy: root` and a true result from its final step.
+- `gofmt`, both vet commands, unit tests in nine packages, and all 33 tests in
+  the integration invocation passed, including the real Activepieces action.
+  The first integration invocation intermittently reported
+  `failed reaching server: context deadline exceeded` during setup with
+  `localhost:7244`. The full rerun used `127.0.0.1:7244`, the same dev server.
+- This checked a stop/start upgrade with a single worker. A mixed-version
+  fleet and a Temporal Cloud deployment were outside the check.

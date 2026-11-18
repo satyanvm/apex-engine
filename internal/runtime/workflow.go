@@ -1,3 +1,8 @@
+// Workflow compatibility: put command-producing changes behind GetVersion and
+// keep the old path for recorded versions, including DefaultVersion for
+// histories without a marker. Keep workflow and activity names stable, retain
+// readers for old payloads, and replay the fixtures before shipping changes.
+// ScheduledWorkflow has its own setup commands before entering RunWorkflow.
 package runtime
 
 import (
@@ -15,6 +20,11 @@ import (
 
 // TaskQueue is the queue the engine's workers poll.
 const TaskQueue = "apex-engine"
+
+// This marker sits before the first DAG command so each run keeps the same
+// runner version, including work it hasn't reached when its worker is replaced.
+const runChangeID = "apex-run"
+const runVersion = 1
 
 const (
 	maxParallel      = 8
@@ -176,6 +186,7 @@ func nodeCtx(ctx workflow.Context) workflow.Context {
 // RunWorkflow drives a DAG: one activity per node, independent branches in
 // parallel, gates pruning their descendants, loops fanning out their body.
 func RunWorkflow(ctx workflow.Context, p RunParams) error {
+	workflow.GetVersion(ctx, runChangeID, workflow.DefaultVersion, runVersion)
 	err := drive(ctx, p)
 	status, msg := statusSucceeded, ""
 	switch {

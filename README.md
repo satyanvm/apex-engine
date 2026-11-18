@@ -298,7 +298,11 @@ Not yet exercised against the real thing: OAuth with a real provider (the tests 
 - **Changing a plan by prompt** rewrites the graph in one model call, so it works on graphs the model can write in one call (a few dozen steps), and a weak model may touch more than it was asked to. The `diff` shows what it did.
 - **Loops** run one item at a time and cannot contain another loop.
 - **OpenAPI 3.x only**, and MCP over Streamable HTTP only. Paging is recognised from parameter names, which is a heuristic.
-- **Upgrading:** a run that is in flight when the engine is upgraded across a change to the workflow code may fail to resume. Let runs finish, or cancel and `retry` them, around an upgrade. There is no workflow versioning yet.
+- **Upgrading:** workers replay open runs against their recorded Temporal history. The DAG runner records its version and retains the original behavior for histories created before versioning. For a rolling upgrade that starts emitting new commands, deploy compatible worker code everywhere before enabling that behavior.
+
+### Workflow upgrade rule for contributors
+
+Keep Temporal workflow and activity names stable and keep decoding older payloads. Guard any change to workflow commands, their order, or the decisions that produce them with `workflow.GetVersion`. Preserve the branch for older histories, including `workflow.DefaultVersion`, for as long as those histories need to replay. The `apex-run` marker covers the DAG runner. Changes to schedule setup need their own marker before the changed command. Run `go test ./internal/runtime -run TestWorkflowReplay` and record a new history when adding a command path. [Temporal replay testing](https://docs.temporal.io/develop/go/best-practices/testing-suite)
 
 ## Layout
 
