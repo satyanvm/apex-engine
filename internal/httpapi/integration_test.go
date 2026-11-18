@@ -92,7 +92,10 @@ func (u *upstream) spec() map[string]any {
 	}
 }
 
-func setup(t *testing.T) *harness {
+func setup(t *testing.T) *harness { return setupWith(t, nil) }
+
+// setupWith lets a test change the server or the worker before they start.
+func setupWith(t *testing.T, change func(*Server, *runtime.Activities)) *harness {
 	t.Helper()
 	t.Setenv("APEX_ALLOW_PRIVATE_NETWORK", "1")
 	dbURL, hp := os.Getenv("APEX_TEST_DATABASE_URL"), os.Getenv("TEMPORAL_TEST_HOSTPORT")
@@ -108,7 +111,7 @@ func setup(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Pool.Exec(ctx, `TRUNCATE catalogs, runs, schedules CASCADE`); err != nil {
+	if _, err := st.Pool.Exec(ctx, `TRUNCATE catalogs, runs, schedules, workflows, api_keys, audit_log, counters, oauth_states CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	tc, err := client.Dial(client.Options{HostPort: hp})
@@ -118,17 +121,21 @@ func setup(t *testing.T) *harness {
 	w := worker.New(tc, runtime.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(runtime.RunWorkflow)
 	w.RegisterWorkflow(runtime.ScheduledWorkflow)
-	w.RegisterActivity(&runtime.Activities{Store: st, Complete: func(_ context.Context, model, system, user string) (string, error) {
+	acts := &runtime.Activities{Store: st, Complete: func(_ context.Context, model, system, user string) (string, error) {
 		return "model said: " + user, nil
-	}})
-	if err := w.Start(); err != nil {
-		t.Fatal(err)
-	}
+	}}
 	u := newUpstream()
-	api := &Server{Store: st, Temporal: tc, Keys: map[string]string{keyA: "a", keyB: "b"}, Log: slog.Default(),
+	api := &Server{Store: st, Temporal: tc, Keys: map[string]string{keyA: "a", keyB: "b"}, Log: slog.Default(), Console: true,
 		Compile: func(ctx context.Context, cat *compiler.Catalog, prompt, name string) (compiler.Plan, error) {
 			return compiler.Plan{Name: "stub", Nodes: []compiler.GraphNode{{Key: "t", Type: "trigger.manual"}}, DefaultInput: map[string]any{}}, nil
 		}}
+	if change != nil {
+		change(api, acts)
+	}
+	w.RegisterActivity(acts)
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
 	srv := httptest.NewServer(api.Handler(1000))
 	t.Cleanup(func() { srv.Close(); w.Stop(); tc.Close(); u.srv.Close(); st.Pool.Close() })
 	return &harness{t: t, url: srv.URL, upstream: u, st: st, tc: tc}
@@ -143,7 +150,14 @@ func (h *harness) do(key, method, path string, body any, into any) int {
 	}
 	req, _ := http.NewRequest(method, h.url+path, rd)
 	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+		// "key|tenant|actor|role" is a platform key acting for someone.
+		parts := strings.Split(key, "|")
+		req.Header.Set("Authorization", "Bearer "+parts[0])
+		for i, name := range []string{HeaderTenant, HeaderActor, HeaderRole} {
+			if len(parts) > i+1 && parts[i+1] != "" {
+				req.Header.Set(name, parts[i+1])
+			}
+		}
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

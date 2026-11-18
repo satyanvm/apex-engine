@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -189,5 +190,122 @@ func TestMCPRoundTrip(t *testing.T) {
 			t.Errorf("tool error = %v", err)
 		}
 		srv.Close()
+	}
+}
+
+func TestPagingIsRecognisedFromParameterNames(t *testing.T) {
+	q := func(names ...string) []any {
+		var out []any
+		for _, n := range names {
+			out = append(out, map[string]any{"name": n, "in": "query"})
+		}
+		return out
+	}
+	cases := []struct {
+		params       []any
+		style, param string
+	}{
+		{q("page", "per_page"), "page", "page"},
+		{q("limit", "offset"), "offset", "offset"},
+		{q("starting_after", "limit"), "cursor", "starting_after"},
+		{q("pageToken", "pageSize"), "cursor", "pageToken"},
+		{q("status", "customer"), "", ""},
+		{[]any{map[string]any{"name": "page", "in": "path"}}, "", ""},
+	}
+	for _, c := range cases {
+		got := detectPaging(c.params)
+		if c.style == "" {
+			if got != nil {
+				t.Errorf("%v: got %v, want none", c.params, got)
+			}
+			continue
+		}
+		if got == nil || got["style"] != c.style || got["param"] != c.param {
+			t.Errorf("%v: got %v", c.params, got)
+		}
+	}
+}
+
+func TestListOperationsGetAllPagesAndWritesDoNot(t *testing.T) {
+	spec := `{"openapi":"3.0.0","servers":[{"url":"https://api.example.com"}],"paths":{"/orders":{
+	  "get":{"operationId":"listOrders","parameters":[{"name":"page","in":"query"},{"name":"per_page","in":"query"}],"responses":{"200":{"description":"ok"}}},
+	  "post":{"operationId":"createOrder","parameters":[{"name":"page","in":"query"}],"responses":{"200":{"description":"ok"}}}}}}`
+	api, err := ParseOpenAPI([]byte(spec), "shop", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range api.Nodes {
+		has := false
+		for _, f := range n.Config {
+			has = has || f.Key == "allPages"
+		}
+		list := strings.HasSuffix(n.ID, "listOrders")
+		if has != list {
+			t.Errorf("%s: allPages=%v", n.ID, has)
+		}
+		if list && (len(n.Outputs) != 5 || n.Exec["pagination"] == nil) {
+			t.Errorf("%s: outputs=%v exec=%v", n.ID, n.Outputs, n.Exec)
+		}
+	}
+}
+
+func TestPieceActionsBecomeNodes(t *testing.T) {
+	meta := &PieceMeta{Name: "slack", Version: "0.11.4", DisplayName: "Slack", Actions: []PieceAction{{
+		Name: "send_channel_message", DisplayName: "Send Message", Description: "Send a message to a channel",
+		Props: []PieceProp{
+			{Name: "info", Type: "MARKDOWN"},
+			{Name: "channel", DisplayName: "Channel", Type: "DROPDOWN", Required: true},
+			{Name: "text", DisplayName: "Message", Type: "LONG_TEXT", Required: true},
+			{Name: "threadTs", DisplayName: "Thread", Type: "SHORT_TEXT"},
+			{Name: "blocks", DisplayName: "Blocks", Type: "JSON"},
+			{Name: "unfurl", DisplayName: "Unfurl", Type: "CHECKBOX"},
+		},
+	}}}
+	nodes := PieceNodes("team_slack", meta)
+	if len(nodes) != 1 {
+		t.Fatalf("nodes = %v", nodes)
+	}
+	n := nodes[0]
+	if n.ID != "piece.team_slack.send_channel_message" || n.Outputs[0] != "result" || n.Exec["piece"] != "slack" || n.Exec["action"] != "send_channel_message" {
+		t.Errorf("node = %+v", n)
+	}
+	if len(n.Config) != 5 {
+		t.Errorf("the markdown note is not an input: %v", n.Config)
+	}
+	types := n.Exec["types"].(map[string]any)
+	if types["blocks"] != "object" || types["unfurl"] != "boolean" || types["text"] != "string" {
+		t.Errorf("types = %v", types)
+	}
+	if !n.Config[0].Required || !strings.Contains(n.Config[0].Help, "id of the chosen") {
+		t.Errorf("a dropdown should say it takes an id: %+v", n.Config[0])
+	}
+}
+
+func TestResponseShapeIsRecordedForTheCompiler(t *testing.T) {
+	spec := `{"openapi":"3.0.0","servers":[{"url":"https://api.example.com"}],
+	"components":{"schemas":{"Order":{"type":"object","properties":{"id":{"type":"string"},"total":{"type":"number"}}}}},
+	"paths":{
+	 "/orders":{"get":{"operationId":"listOrders","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Order"}}}}}}}},
+	 "/orders/{id}":{"get":{"operationId":"getOrder","parameters":[{"name":"id","in":"path","required":true}],"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Order"}}}}}}},
+	 "/any":{"get":{"operationId":"anything","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","additionalProperties":true,"properties":{"a":{"type":"string"}}}}}}}}},
+	 "/ping":{"get":{"operationId":"ping","responses":{"200":{"description":"ok"}}}}}}`
+	api, err := ParseOpenAPI([]byte(spec), "shop", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, n := range api.Nodes {
+		got[n.ID] = fmt.Sprint(n.Exec["bodyType"], " ", n.Exec["bodyFields"])
+	}
+	want := map[string]string{
+		"api.shop.listOrders": "array <nil>",
+		"api.shop.getOrder":   "object [id total]",
+		"api.shop.anything":   "object <nil>", // open-ended objects cannot be checked by name
+		"api.shop.ping":       "<nil> <nil>",
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s: %q, want %q", id, got[id], w)
+		}
 	}
 }

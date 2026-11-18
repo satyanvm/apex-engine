@@ -1,0 +1,1 @@
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS callback_url text NOT NULL DEFAULT '';

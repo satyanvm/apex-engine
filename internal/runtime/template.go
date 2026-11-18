@@ -8,7 +8,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/satyanvm/apex-engine/internal/compiler"
 )
+
+func init() { compiler.ConditionChecker = CheckCondition }
 
 var token = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
@@ -175,43 +179,265 @@ func (s Scope) RenderString(tpl string) (string, error) {
 	return out, firstErr
 }
 
-var cond = regexp.MustCompile(`^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$`)
-
-// EvalCondition is a deliberately tiny comparison: "<lhs> <op> <rhs>" or a bare
-// reference for truthiness. Invalid comparisons fail instead of opening a branch.
+// EvalCondition evaluates a gate's condition. A condition is a comparison
+// ("<lhs> <op> <rhs>", op one of == != > < >= <= contains), a bare reference
+// tested for truthiness, or several of those joined with && and ||, negated
+// with ! and grouped with parentheses. Anything that does not parse fails,
+// rather than opening a branch.
 func (s Scope) EvalCondition(expr string) (bool, error) {
 	expr = strings.TrimSpace(token.ReplaceAllString(expr, "$1"))
 	if expr == "" {
 		return false, fmt.Errorf("condition is empty")
 	}
-	m := cond.FindStringSubmatch(expr)
-	if m == nil {
-		v, err := s.Lookup(expr)
+	toks, err := condTokens(expr)
+	if err != nil {
+		return false, err
+	}
+	p := &condParser{s: s, toks: toks, expr: expr}
+	v, err := p.or()
+	if err != nil {
+		return false, err
+	}
+	if p.pos != len(p.toks) {
+		return false, fmt.Errorf("condition has an unexpected %q: %s", p.toks[p.pos].text, expr)
+	}
+	return v, nil
+}
+
+// CheckCondition reports whether a condition parses, without evaluating it.
+func CheckCondition(expr string) error {
+	expr = strings.TrimSpace(token.ReplaceAllString(expr, "$1"))
+	if expr == "" {
+		return fmt.Errorf("condition is empty")
+	}
+	toks, err := condTokens(expr)
+	if err != nil {
+		return err
+	}
+	p := &condParser{toks: toks, expr: expr, dry: true}
+	if _, err := p.or(); err != nil {
+		return err
+	}
+	if p.pos != len(p.toks) {
+		return fmt.Errorf("condition has an unexpected %q: %s", p.toks[p.pos].text, expr)
+	}
+	return nil
+}
+
+type condTok struct {
+	kind string // op, logic, not, lparen, rparen, str, word
+	text string
+}
+
+func condTokens(expr string) ([]condTok, error) {
+	var out []condTok
+	for i := 0; i < len(expr); {
+		c := expr[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\n':
+			i++
+		case c == '(':
+			out, i = append(out, condTok{"lparen", "("}), i+1
+		case c == ')':
+			out, i = append(out, condTok{"rparen", ")"}), i+1
+		case c == '"' || c == '\'':
+			end := strings.IndexByte(expr[i+1:], c)
+			if end < 0 {
+				return nil, fmt.Errorf("condition has an unclosed quote: %s", expr)
+			}
+			out, i = append(out, condTok{"str", expr[i+1 : i+1+end]}), i+end+2
+		case strings.HasPrefix(expr[i:], "&&") || strings.HasPrefix(expr[i:], "||"):
+			out, i = append(out, condTok{"logic", expr[i : i+2]}), i+2
+		case strings.HasPrefix(expr[i:], "==") || strings.HasPrefix(expr[i:], "!=") || strings.HasPrefix(expr[i:], ">=") || strings.HasPrefix(expr[i:], "<="):
+			out, i = append(out, condTok{"op", expr[i : i+2]}), i+2
+		case c == '>' || c == '<':
+			out, i = append(out, condTok{"op", string(c)}), i+1
+		case c == '!':
+			out, i = append(out, condTok{"not", "!"}), i+1
+		default:
+			j := i
+			for j < len(expr) && !strings.ContainsRune(" \t\n()\"'!<>=&|", rune(expr[j])) {
+				j++
+			}
+			if j == i {
+				return nil, fmt.Errorf("condition has an unexpected %q: %s", string(c), expr)
+			}
+			word := expr[i:j]
+			switch strings.ToLower(word) {
+			case "and":
+				out = append(out, condTok{"logic", "&&"})
+			case "or":
+				out = append(out, condTok{"logic", "||"})
+			case "not":
+				out = append(out, condTok{"not", "!"})
+			case "contains":
+				out = append(out, condTok{"op", "contains"})
+			default:
+				out = append(out, condTok{"word", word})
+			}
+			i = j
+		}
+	}
+	return out, nil
+}
+
+type condParser struct {
+	s    Scope
+	toks []condTok
+	pos  int
+	expr string
+	dry  bool // parse only
+}
+
+func (p *condParser) peek() (condTok, bool) {
+	if p.pos < len(p.toks) {
+		return p.toks[p.pos], true
+	}
+	return condTok{}, false
+}
+
+func (p *condParser) or() (bool, error) {
+	v, err := p.and()
+	if err != nil {
+		return false, err
+	}
+	for {
+		t, ok := p.peek()
+		if !ok || t.kind != "logic" || t.text != "||" {
+			return v, nil
+		}
+		p.pos++
+		r, err := p.and()
 		if err != nil {
 			return false, err
 		}
-		return truthy(v), nil
+		v = v || r
 	}
-	lhs, err := s.side(m[1])
-	if err != nil {
-		return false, err
-	}
-	rhs, err := s.side(m[3])
-	if err != nil {
-		return false, err
-	}
-	return compare(lhs, m[2], rhs, expr)
 }
 
-func (s Scope) side(tok string) (any, error) {
-	tok = strings.TrimSpace(tok)
-	if len(tok) >= 2 && (tok[0] == '"' || tok[0] == '\'') && tok[len(tok)-1] == tok[0] {
-		return tok[1 : len(tok)-1], nil
+func (p *condParser) and() (bool, error) {
+	v, err := p.unary()
+	if err != nil {
+		return false, err
 	}
-	if strings.HasPrefix(tok, "input.") || strings.HasPrefix(tok, "outputs.") || tok == "item" || strings.HasPrefix(tok, "item.") {
-		return s.Lookup(tok)
+	for {
+		t, ok := p.peek()
+		if !ok || t.kind != "logic" || t.text != "&&" {
+			return v, nil
+		}
+		p.pos++
+		r, err := p.unary()
+		if err != nil {
+			return false, err
+		}
+		v = v && r
 	}
-	return tok, nil
+}
+
+func (p *condParser) unary() (bool, error) {
+	t, ok := p.peek()
+	if !ok {
+		return false, fmt.Errorf("condition ends too early: %s", p.expr)
+	}
+	switch t.kind {
+	case "not":
+		p.pos++
+		v, err := p.unary()
+		return !v, err
+	case "lparen":
+		p.pos++
+		v, err := p.or()
+		if err != nil {
+			return false, err
+		}
+		if c, ok := p.peek(); !ok || c.kind != "rparen" {
+			return false, fmt.Errorf("condition is missing a closing parenthesis: %s", p.expr)
+		}
+		p.pos++
+		return v, nil
+	}
+	return p.comparison()
+}
+
+// operand reads one side of a comparison. Unquoted words that are not
+// references run together, so "outputs.x.name == New York" still works.
+func (p *condParser) operand() (any, bool, error) {
+	t, ok := p.peek()
+	if !ok || (t.kind != "str" && t.kind != "word") {
+		return nil, false, fmt.Errorf("condition is missing a value: %s", p.expr)
+	}
+	p.pos++
+	if t.kind == "str" {
+		return t.text, false, nil
+	}
+	text := t.text
+	if isRef(text) {
+		if p.dry {
+			return nil, true, nil
+		}
+		v, err := p.s.Lookup(text)
+		return v, true, err
+	}
+	for {
+		n, ok := p.peek()
+		if !ok || n.kind != "word" || isRef(n.text) {
+			break
+		}
+		text += " " + n.text
+		p.pos++
+	}
+	return text, false, nil
+}
+
+func isRef(tok string) bool {
+	return strings.HasPrefix(tok, "input.") || strings.HasPrefix(tok, "outputs.") || tok == "item" || strings.HasPrefix(tok, "item.") || strings.HasPrefix(tok, "loop.")
+}
+
+func (p *condParser) comparison() (bool, error) {
+	lhs, lref, err := p.operand()
+	if err != nil {
+		return false, err
+	}
+	t, ok := p.peek()
+	if !ok || t.kind != "op" {
+		if !lref {
+			return false, fmt.Errorf("condition must compare something or test a reference: %s", p.expr)
+		}
+		return !p.dry && truthy(lhs), nil
+	}
+	p.pos++
+	rhs, _, err := p.operand()
+	if err != nil {
+		return false, err
+	}
+	if p.dry {
+		return false, nil
+	}
+	if t.text == "contains" {
+		return contains(lhs, rhs), nil
+	}
+	return compare(lhs, t.text, rhs, p.expr)
+}
+
+// contains tests a substring of text, or membership of a list.
+func contains(l, r any) bool {
+	if list, ok := decodeJSONString(l).([]any); ok {
+		for _, x := range list {
+			if fmt.Sprint(coerce(x)) == fmt.Sprint(coerce(r)) {
+				return true
+			}
+		}
+		return false
+	}
+	ls, err := stringify(l)
+	if err != nil {
+		return false
+	}
+	rs, err := stringify(r)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ls), strings.ToLower(rs))
 }
 
 func coerce(v any) any {

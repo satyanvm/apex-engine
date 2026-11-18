@@ -1,0 +1,44 @@
+{
+  "shop": {
+    "orders": [
+      {"id": "o1", "customer_id": "c1", "total": 250, "status": "late", "days_late": 5},
+      {"id": "o2", "customer_id": "c2", "total": 40, "status": "late", "days_late": 2},
+      {"id": "o3", "customer_id": "c3", "total": 120, "status": "shipped", "days_late": 0},
+      {"id": "o4", "customer_id": "c1", "total": 310, "status": "late", "days_late": 9},
+      {"id": "o5", "customer_id": "c4", "total": 75, "status": "delivered", "days_late": 0},
+      {"id": "o6", "customer_id": "c2", "total": 180, "status": "late", "days_late": 1},
+      {"id": "o7", "customer_id": "c3", "total": 60, "status": "cancelled", "days_late": 0}
+    ],
+    "customers": [
+      {"id": "c1", "name": "Ana", "email": "ana@example.test", "tier": "gold"},
+      {"id": "c2", "name": "Bo", "email": "bo@example.test", "tier": "standard"},
+      {"id": "c3", "name": "Cy", "email": "cy@example.test", "tier": "gold"},
+      {"id": "c4", "name": "Di", "email": "di@example.test", "tier": "standard"}
+    ]
+  },
+  "desk": {
+    "tickets": [
+      {"id": "t1", "subject": "Login broken", "status": "open", "priority": "urgent", "assignee": null, "customer_email": "a@example.test", "hours_open": 30},
+      {"id": "t2", "subject": "Change invoice name", "status": "open", "priority": "low", "assignee": "sam", "customer_email": "b@example.test", "hours_open": 4},
+      {"id": "t3", "subject": "Refund not received", "status": "pending", "priority": "high", "assignee": null, "customer_email": "c@example.test", "hours_open": 50},
+      {"id": "t4", "subject": "Site down", "status": "open", "priority": "urgent", "assignee": "sam", "customer_email": "d@example.test", "hours_open": 2},
+      {"id": "t5", "subject": "Feature idea", "status": "closed", "priority": "low", "assignee": "lee", "customer_email": "e@example.test", "hours_open": 100},
+      {"id": "t6", "subject": "Export fails", "status": "open", "priority": "high", "assignee": null, "customer_email": "f@example.test", "hours_open": 12}
+    ]
+  },
+  "crm": {
+    "deals": [
+      {"id": "d1", "name": "Acme renewal", "amount": 50000, "stage": "open", "owner": "kim", "days_idle": 40, "contact_id": "k1"},
+      {"id": "d2", "name": "Borealis pilot", "amount": 20000, "stage": "open", "owner": "raj", "days_idle": 3, "contact_id": "k2"},
+      {"id": "d3", "name": "Cobalt expansion", "amount": 90000, "stage": "won", "owner": "kim", "days_idle": 0, "contact_id": "k3"},
+      {"id": "d4", "name": "Acme add-on", "amount": 15000, "stage": "open", "owner": "kim", "days_idle": 21, "contact_id": "k1"},
+      {"id": "d5", "name": "Borealis rollout", "amount": 70000, "stage": "lost", "owner": "raj", "days_idle": 60, "contact_id": "k2"},
+      {"id": "d6", "name": "Cobalt trial", "amount": 5000, "stage": "open", "owner": "raj", "days_idle": 35, "contact_id": "k3"}
+    ],
+    "contacts": [
+      {"id": "k1", "name": "Ada", "email": "ada@example.test"},
+      {"id": "k2", "name": "Ben", "email": "ben@example.test"},
+      {"id": "k3", "name": "Cleo", "email": "cleo@example.test"}
+    ]
+  }
+}

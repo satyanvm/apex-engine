@@ -1,0 +1,1162 @@
+{
+  "results": [
+    {
+      "id": "shop-refund-late",
+      "prompt": "Refund every late order.",
+      "compiled": true,
+      "compileMs": 62364,
+      "repairs": 0,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node transform_orders: expression failed: cannot iterate over: null",
+      "calls": [],
+      "missingCalls": [
+        "POST /shop/orders/o1/refund",
+        "POST /shop/orders/o2/refund",
+        "POST /shop/orders/o4/refund",
+        "POST /shop/orders/o6/refund"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Refund Late Orders",
+        "description": "Refund all late orders from the shop API",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger",
+            "type": "trigger.manual",
+            "name": "Start Refund Process",
+            "dependsOn": [],
+            "config": {}
+          },
+          {
+            "key": "list_orders",
+            "type": "api.eval_shop.listOrders",
+            "name": "List All Late Orders",
+            "dependsOn": [
+              "trigger"
+            ],
+            "config": {
+              "allPages": true,
+              "status": "late"
+            }
+          },
+          {
+            "key": "transform_orders",
+            "type": "data.transform",
+            "name": "Extract Order IDs for Refund",
+            "dependsOn": [
+              "list_orders"
+            ],
+            "config": {
+              "expression": "[.body[] | {id: .id}]"
+            }
+          },
+          {
+            "key": "loop_orders",
+            "type": "logic.loop",
+            "name": "Refund Each Late Order",
+            "dependsOn": [
+              "transform_orders"
+            ],
+            "config": {
+              "items": "outputs.transform_orders.result",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "refund_order",
+            "type": "api.eval_shop.refundOrder",
+            "name": "Refund Order",
+            "dependsOn": [
+              "loop_orders"
+            ],
+            "config": {
+              "body": {
+                "reason": "Late order refund"
+              },
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Refund late orders"
+        }
+      }
+    },
+    {
+      "id": "shop-refund-late-over-100",
+      "prompt": "Refund every late order with a total over 100 dollars.",
+      "compiled": true,
+      "compileMs": 43262,
+      "repairs": 0,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node data_transform_filter: expression failed: cannot iterate over: null",
+      "calls": [],
+      "missingCalls": [
+        "POST /shop/orders/o1/refund",
+        "POST /shop/orders/o4/refund",
+        "POST /shop/orders/o6/refund"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Refund Late Orders Over 100",
+        "description": "Refund all late orders with a total exceeding 100 dollars.",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Manual Trigger",
+            "dependsOn": [],
+            "config": {
+              "name": "Refund Late Orders Over 100"
+            }
+          },
+          {
+            "key": "list_orders",
+            "type": "api.eval_shop.listOrders",
+            "name": "List Late Orders",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "allPages": true,
+              "status": "late"
+            }
+          },
+          {
+            "key": "data_transform_filter",
+            "type": "data.transform",
+            "name": "Filter Orders Over 100",
+            "dependsOn": [
+              "list_orders"
+            ],
+            "config": {
+              "expression": "[.body[] | select(.total \u003e 100)]"
+            }
+          },
+          {
+            "key": "logic_loop_refund",
+            "type": "logic.loop",
+            "name": "Refund Each Order",
+            "dependsOn": [
+              "data_transform_filter"
+            ],
+            "config": {
+              "items": "outputs.data_transform_filter.result",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "refund_order",
+            "type": "api.eval_shop.refundOrder",
+            "name": "Refund Order",
+            "dependsOn": [
+              "logic_loop_refund"
+            ],
+            "config": {
+              "body": {
+                "reason": "Order total exceeds 100 dollars"
+              },
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Refund Late Orders Over 100"
+        }
+      }
+    },
+    {
+      "id": "shop-approve-then-refund",
+      "prompt": "For each late order over 200 dollars, ask me to approve and then refund it.",
+      "compiled": false,
+      "compileMs": 90941,
+      "repairs": 0,
+      "nodes": 0,
+      "compileError": "reduce phase: ollama/qwen3:8b could not author a valid graph in 3 attempts; last problem: node 'refund_order' references {{outputs.approve_refund.passed.id}}: 'logic.approval' has no output 'passed' (its outputs: approved, note, decidedBy, message)",
+      "structureProblems": [],
+      "executed": false,
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false
+    },
+    {
+      "id": "shop-rejected-cancel",
+      "prompt": "Cancel any late order that is more than 7 days late, but ask for my approval first.",
+      "compiled": false,
+      "compileMs": 108005,
+      "repairs": 0,
+      "nodes": 0,
+      "compileError": "reduce phase: ollama/qwen3:8b could not author a valid graph in 3 attempts; last problem: node 'cancel_order' references {{outputs.logic_filter.passed.id}}: 'passed' is a plain value with no field 'id'. Gates do not pass data through: add the node that produced the data to dependsOn and reference outputs.\u003cthat key\u003e.\u003cfield\u003e, or use {{item.\u003cfield\u003e}} inside a loop",
+      "structureProblems": [],
+      "executed": false,
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false
+    },
+    {
+      "id": "shop-note-shipped",
+      "prompt": "Add the note 'checked' to every shipped order.",
+      "compiled": true,
+      "compileMs": 44491,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o3/notes"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-coupon-gold",
+      "prompt": "Give every gold customer a 10 percent coupon.",
+      "compiled": true,
+      "compileMs": 45496,
+      "repairs": 0,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/coupons",
+        "POST /shop/coupons"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-refund-one",
+      "prompt": "Refund order o5.",
+      "compiled": true,
+      "compileMs": 26557,
+      "repairs": 0,
+      "nodes": 2,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o5/refund"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-email-per-late-order",
+      "prompt": "For every late order, look up the customer and send one apology email per order to that customer's email address.",
+      "compiled": true,
+      "compileMs": 56739,
+      "repairs": 0,
+      "nodes": 6,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node transform_orders: expression failed: cannot iterate over: null",
+      "calls": [],
+      "missingCalls": [
+        "POST /shop/emails",
+        "POST /shop/emails",
+        "POST /shop/emails",
+        "POST /shop/emails"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Handle Late Orders",
+        "description": "Process late orders by looking up customers and sending apology emails.",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Manual Trigger",
+            "dependsOn": [],
+            "config": {}
+          },
+          {
+            "key": "list_late_orders",
+            "type": "api.eval_shop.listOrders",
+            "name": "List Late Orders",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "allPages": true,
+              "status": "late"
+            }
+          },
+          {
+            "key": "transform_orders",
+            "type": "data.transform",
+            "name": "Transform Orders",
+            "dependsOn": [
+              "list_late_orders"
+            ],
+            "config": {
+              "expression": "[.body[] | select(.status == \"late\")]"
+            }
+          },
+          {
+            "key": "loop_orders",
+            "type": "logic.loop",
+            "name": "Loop Through Orders",
+            "dependsOn": [
+              "transform_orders"
+            ],
+            "config": {
+              "items": "outputs.transform_orders.result",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "get_customer",
+            "type": "api.eval_shop.getCustomer",
+            "name": "Get Customer",
+            "dependsOn": [
+              "loop_orders"
+            ],
+            "config": {
+              "id": "{{item.customer_id}}"
+            }
+          },
+          {
+            "key": "send_apology_email",
+            "type": "api.eval_shop.sendEmail",
+            "name": "Send Apology Email",
+            "dependsOn": [
+              "get_customer",
+              "loop_orders"
+            ],
+            "config": {
+              "body": {
+                "body": "We apologize for the delay with your order. We are working to resolve the issue as soon as possible.",
+                "subject": "Apology for Late Order",
+                "to": "{{outputs.get_customer.body.email}}"
+              }
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Late Orders"
+        }
+      }
+    },
+    {
+      "id": "shop-no-match",
+      "prompt": "Refund every late order with a total over 1000 dollars.",
+      "compiled": true,
+      "compileMs": 81516,
+      "repairs": 1,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node filter_orders: reference not found: outputs.list_orders.body.total",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Refund Late Orders Over 1000",
+        "description": "Refund all late orders with a total exceeding $1000.",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Manual Trigger",
+            "dependsOn": [],
+            "config": {
+              "input": {
+                "topic": "{{input.topic}}"
+              }
+            }
+          },
+          {
+            "key": "list_orders",
+            "type": "api.eval_shop.listOrders",
+            "name": "List Late Orders",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "allPages": true,
+              "status": "late"
+            }
+          },
+          {
+            "key": "filter_orders",
+            "type": "logic.filter",
+            "name": "Filter Orders Over 1000",
+            "dependsOn": [
+              "list_orders"
+            ],
+            "config": {
+              "condition": "outputs.list_orders.body.total \u003e 1000"
+            }
+          },
+          {
+            "key": "loop_orders",
+            "type": "logic.loop",
+            "name": "Loop Through Orders",
+            "dependsOn": [
+              "filter_orders"
+            ],
+            "config": {
+              "items": "outputs.filter_orders.passed",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "refund_order",
+            "type": "api.eval_shop.refundOrder",
+            "name": "Refund Order",
+            "dependsOn": [
+              "loop_orders"
+            ],
+            "config": {
+              "body": {
+                "reason": "Order total exceeds $1000 and is late"
+              },
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Refund Late Orders"
+        }
+      }
+    },
+    {
+      "id": "desk-assign-unassigned-urgent",
+      "prompt": "Assign every open urgent ticket that has no assignee to sam.",
+      "compiled": false,
+      "compileMs": 95553,
+      "repairs": 0,
+      "nodes": 0,
+      "compileError": "reduce phase: ollama/qwen3:8b could not author a valid graph in 3 attempts; last problem: node 'assign_ticket' references {{outputs.filter_unassigned.passed.body.id}}: 'passed' is a plain value with no field 'body'. Gates do not pass data through: add the node that produced the data to dependsOn and reference outputs.\u003cthat key\u003e.\u003cfield\u003e, or use {{item.\u003cfield\u003e}} inside a loop",
+      "structureProblems": [],
+      "executed": false,
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false
+    },
+    {
+      "id": "desk-close-old-pending",
+      "prompt": "Close all pending tickets that have been open more than 48 hours.",
+      "compiled": true,
+      "compileMs": 53742,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t3/close"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-escalate-urgent",
+      "prompt": "Escalate every open urgent ticket.",
+      "compiled": true,
+      "compileMs": 78116,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/escalations",
+        "POST /desk/escalations"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-comment-high",
+      "prompt": "Post the internal comment 'Looking into it' on every open high priority ticket.",
+      "compiled": true,
+      "compileMs": 53956,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t6/comments"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-raise-priority",
+      "prompt": "Set the priority to urgent on every open ticket that has been open more than 10 hours and is not already urgent.",
+      "compiled": true,
+      "compileMs": 76402,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node filter_tickets: reference not found: outputs.list_tickets.body.hours_open",
+      "calls": [],
+      "missingCalls": [
+        "PATCH /desk/tickets/t6"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Urgent Tickets",
+        "description": "Set priority to urgent for open tickets over 10 hours old",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "list_tickets",
+            "type": "api.eval_desk.listTickets",
+            "name": "List Open Tickets",
+            "dependsOn": [],
+            "config": {
+              "allPages": true,
+              "status": "open"
+            }
+          },
+          {
+            "key": "filter_tickets",
+            "type": "logic.filter",
+            "name": "Filter Tickets Over 10 Hours",
+            "dependsOn": [
+              "list_tickets"
+            ],
+            "config": {
+              "condition": "outputs.list_tickets.body.hours_open \u003e 10 \u0026\u0026 outputs.list_tickets.body.priority != 'urgent'"
+            }
+          },
+          {
+            "key": "loop_tickets",
+            "type": "logic.loop",
+            "name": "Loop Through Filtered Tickets",
+            "dependsOn": [
+              "filter_tickets"
+            ],
+            "config": {
+              "items": "outputs.filter_tickets.passed",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "update_ticket",
+            "type": "api.eval_desk.updateTicket",
+            "name": "Update Ticket Priority",
+            "dependsOn": [
+              "loop_tickets"
+            ],
+            "config": {
+              "body": {
+                "priority": "urgent"
+              },
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Urgent Tickets"
+        }
+      }
+    },
+    {
+      "id": "desk-approve-close-low",
+      "prompt": "Ask me before closing each open low priority ticket, then close the ones I approve.",
+      "compiled": true,
+      "compileMs": 96638,
+      "repairs": 1,
+      "nodes": 6,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded_with_failed_items",
+      "runError": "1 loop items failed",
+      "calls": [],
+      "missingCalls": [
+        "POST /desk/tickets/t2/close"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Close Low Priority Tickets",
+        "description": "Close open low priority tickets after human approval",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Start Workflow",
+            "dependsOn": [],
+            "config": {
+              "message": "Please confirm if you want to close open low priority tickets."
+            }
+          },
+          {
+            "key": "list_tickets",
+            "type": "api.eval_desk.listTickets",
+            "name": "List Open Low Priority Tickets",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "allPages": true,
+              "priority": "low",
+              "status": "open"
+            }
+          },
+          {
+            "key": "logic_loop",
+            "type": "logic.loop",
+            "name": "Process Each Ticket",
+            "dependsOn": [
+              "list_tickets"
+            ],
+            "config": {
+              "items": "outputs.list_tickets.items",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "get_ticket",
+            "type": "api.eval_desk.getTicket",
+            "name": "Get Ticket Details",
+            "dependsOn": [
+              "logic_loop"
+            ],
+            "config": {
+              "id": "outputs.logic_loop.item.id"
+            }
+          },
+          {
+            "key": "logic_approval",
+            "type": "logic.approval",
+            "name": "Approve Ticket Closure",
+            "dependsOn": [
+              "get_ticket"
+            ],
+            "config": {
+              "message": "Do you want to close the ticket with subject: {{outputs.get_ticket.body.subject}}?"
+            }
+          },
+          {
+            "key": "close_ticket",
+            "type": "api.eval_desk.closeTicket",
+            "name": "Close Ticket",
+            "dependsOn": [
+              "logic_approval"
+            ],
+            "config": {
+              "id": "outputs.logic_approval.passed ? outputs.get_ticket.body.id : null"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Ticket Management"
+        }
+      }
+    },
+    {
+      "id": "desk-nothing-to-do",
+      "prompt": "Close every open ticket assigned to lee.",
+      "compiled": false,
+      "compileMs": 116787,
+      "repairs": 0,
+      "nodes": 0,
+      "compileError": "reduce phase: ollama/qwen3:8b could not author a valid graph in 3 attempts; last problem: node 'filter_open_tickets': condition has an unexpected \"|\": outputs.list_tickets.body | length \u003e 0. Write a comparison (== != \u003e \u003c \u003e= \u003c= contains), or several joined with \u0026\u0026 and ||",
+      "structureProblems": [],
+      "executed": false,
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false
+    },
+    {
+      "id": "crm-task-idle",
+      "prompt": "Create a task titled 'Follow up' on every open deal that has been idle for more than 30 days.",
+      "compiled": false,
+      "compileMs": 93957,
+      "repairs": 0,
+      "nodes": 0,
+      "compileError": "reduce phase: ollama/qwen3:8b could not author a valid graph in 3 attempts; last problem: node 'create_task' references {{outputs.filter_idle_deals.passed.id}}: 'passed' is a plain value with no field 'id'. Gates do not pass data through: add the node that produced the data to dependsOn and reference outputs.\u003cthat key\u003e.\u003cfield\u003e, or use {{item.\u003cfield\u003e}} inside a loop",
+      "structureProblems": [],
+      "executed": false,
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false
+    },
+    {
+      "id": "crm-mark-lost",
+      "prompt": "Mark every open deal that has been idle more than 30 days as lost.",
+      "compiled": true,
+      "compileMs": 45805,
+      "repairs": 0,
+      "nodes": 3,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node transform_deals: expression failed: cannot iterate over: null",
+      "calls": [],
+      "missingCalls": [
+        "PATCH /crm/deals/d1",
+        "PATCH /crm/deals/d6"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Mark Open Deals as Lost",
+        "description": "Mark open deals that have been idle for more than 30 days as lost.",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "list_deals",
+            "type": "api.eval_crm.listDeals",
+            "name": "List All Deals",
+            "dependsOn": [],
+            "config": {
+              "stage": "open"
+            }
+          },
+          {
+            "key": "transform_deals",
+            "type": "data.transform",
+            "name": "Filter and Mark Deals",
+            "dependsOn": [
+              "list_deals"
+            ],
+            "config": {
+              "expression": "[.body[] | select(.days_idle \u003e 30) | { id: .id, stage: \"lost\" }]"
+            }
+          },
+          {
+            "key": "update_deals",
+            "type": "api.eval_crm.updateDeal",
+            "name": "Update Deals",
+            "dependsOn": [
+              "transform_deals"
+            ],
+            "config": {
+              "body": "{{item.stage}}",
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "deals"
+        },
+        "schedule": "daily 00:00"
+      }
+    },
+    {
+      "id": "crm-email-big-open",
+      "prompt": "Email the contact of every open deal worth more than 18000 dollars with a short check-in.",
+      "compiled": true,
+      "compileMs": 99128,
+      "repairs": 1,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node filter_deals: reference not found: outputs.list_open_deals.body.amount",
+      "calls": [],
+      "missingCalls": [
+        "POST /crm/contacts/k1/emails",
+        "POST /crm/contacts/k2/emails"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Email Open Deals",
+        "description": "Email contacts of open deals over $18,000 with a short check-in",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "list_open_deals",
+            "type": "api.eval_crm.listDeals",
+            "name": "List Open Deals",
+            "dependsOn": [],
+            "config": {
+              "allPages": true,
+              "stage": "open"
+            }
+          },
+          {
+            "key": "filter_deals",
+            "type": "logic.filter",
+            "name": "Filter Deals Over $18,000",
+            "dependsOn": [
+              "list_open_deals"
+            ],
+            "config": {
+              "condition": "outputs.list_open_deals.body.amount \u003e 18000"
+            }
+          },
+          {
+            "key": "get_contacts",
+            "type": "logic.loop",
+            "name": "Get Contacts for Deals",
+            "dependsOn": [
+              "filter_deals"
+            ],
+            "config": {
+              "items": "outputs.filter_deals.passed",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "get_contact",
+            "type": "api.eval_crm.getContact",
+            "name": "Get Contact Details",
+            "dependsOn": [
+              "get_contacts"
+            ],
+            "config": {
+              "id": "{{item.contact_id}}"
+            }
+          },
+          {
+            "key": "email_contact",
+            "type": "api.eval_crm.emailContact",
+            "name": "Email Contact",
+            "dependsOn": [
+              "get_contact"
+            ],
+            "config": {
+              "body": {
+                "body": "Hi {{outputs.get_contact.body.name}},\n\nI hope you're doing well. Just a quick check-in to see how things are progressing with the deal. Let me know if you need any further assistance.\n\nBest regards,\n[Your Name]",
+                "subject": "{{input.topic}}"
+              },
+              "id": "{{outputs.get_contact.body.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Check-in on Open Deals"
+        }
+      }
+    },
+    {
+      "id": "crm-approve-delete",
+      "prompt": "Delete contact k3, but only after I approve.",
+      "compiled": true,
+      "compileMs": 50255,
+      "repairs": 1,
+      "nodes": 3,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "DELETE /crm/contacts/true"
+      ],
+      "missingCalls": [
+        "DELETE /crm/contacts/k3"
+      ],
+      "unexpectedCalls": [
+        "DELETE /crm/contacts/true"
+      ],
+      "passed": false,
+      "plan": {
+        "name": "Delete Contact with Approval",
+        "description": "Delete contact k3 after human approval",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Start workflow",
+            "dependsOn": [],
+            "config": {}
+          },
+          {
+            "key": "logic_approval",
+            "type": "logic.approval",
+            "name": "Approve deletion",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "message": "Approve deletion of contact {{input.contact_id}}?"
+            }
+          },
+          {
+            "key": "api_delete_contact",
+            "type": "api.eval_crm.deleteContact",
+            "name": "Delete contact",
+            "dependsOn": [
+              "logic_approval"
+            ],
+            "config": {
+              "id": "{{outputs.logic_approval.approved}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "contact_id": "k3"
+        }
+      }
+    },
+    {
+      "id": "crm-summary-only",
+      "prompt": "Summarise the open deals owned by kim. Do not change anything.",
+      "compiled": true,
+      "compileMs": 110108,
+      "repairs": 2,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node data_transform: expression is not valid jq: input(s)/0 is not allowed",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Summarize Open Deals Owned by Kim",
+        "description": "Summarize open deals owned by Kim from the CRM.",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Manual Trigger",
+            "dependsOn": [],
+            "config": {}
+          },
+          {
+            "key": "api_eval_crm_listDeals",
+            "type": "api.eval_crm.listDeals",
+            "name": "List Open Deals Owned by Kim",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "owner": "kim",
+              "stage": "open"
+            }
+          },
+          {
+            "key": "data_transform",
+            "type": "data.transform",
+            "name": "Transform and Summarize Deals",
+            "dependsOn": [
+              "api_eval_crm_listDeals"
+            ],
+            "config": {
+              "expression": "inputs as $input | [ .outputs.api_eval_crm_listDeals.body[] | { name: .name, amount: .amount, days_idle: .days_idle } ]"
+            }
+          },
+          {
+            "key": "agent_llm",
+            "type": "agent.llm",
+            "name": "Summarize Deals",
+            "dependsOn": [
+              "data_transform"
+            ],
+            "config": {
+              "prompt": "Summarize the following open deals owned by Kim: {{outputs.data_transform.result}}.",
+              "system": "You are a helpful assistant that summarizes data into a concise summary. Focus on the key details."
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "CRM Deals"
+        }
+      }
+    },
+    {
+      "id": "cross-escalate-and-note",
+      "prompt": "For every late order more than 7 days late, add the note 'escalated to support' to the order and post the internal comment 'Customer has a very late order' on ticket t1.",
+      "compiled": true,
+      "compileMs": 89864,
+      "repairs": 0,
+      "nodes": 9,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [],
+      "missingCalls": [
+        "POST /desk/tickets/t1/comments",
+        "POST /shop/orders/o4/notes"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Escalate Late Orders",
+        "description": "Escalate late orders by adding notes and comments",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "trigger_manual",
+            "type": "trigger.manual",
+            "name": "Manual Trigger",
+            "dependsOn": [],
+            "config": {
+              "input": {
+                "topic": "{{input.topic}}"
+              }
+            }
+          },
+          {
+            "key": "list_orders",
+            "type": "api.eval_shop.listOrders",
+            "name": "List Late Orders",
+            "dependsOn": [
+              "trigger_manual"
+            ],
+            "config": {
+              "allPages": "true",
+              "status": "late"
+            }
+          },
+          {
+            "key": "data_transform_filter_late_orders",
+            "type": "data.transform",
+            "name": "Filter Late Orders \u003e 7 Days",
+            "dependsOn": [
+              "list_orders"
+            ],
+            "config": {
+              "expression": "[.outputs.list_orders.body[] | select(.days_late \u003e 7)]"
+            }
+          },
+          {
+            "key": "logic_loop_orders",
+            "type": "logic.loop",
+            "name": "Loop Through Late Orders",
+            "dependsOn": [
+              "data_transform_filter_late_orders"
+            ],
+            "config": {
+              "items": "outputs.data_transform_filter_late_orders.result",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "add_order_note",
+            "type": "api.eval_shop.addOrderNote",
+            "name": "Add Order Note",
+            "dependsOn": [
+              "logic_loop_orders"
+            ],
+            "config": {
+              "body": {
+                "text": "escalated to support"
+              },
+              "id": "{{item.id}}"
+            }
+          },
+          {
+            "key": "get_order",
+            "type": "api.eval_shop.getOrder",
+            "name": "Get Order Details",
+            "dependsOn": [
+              "logic_loop_orders"
+            ],
+            "config": {
+              "id": "{{item.id}}"
+            }
+          },
+          {
+            "key": "data_transform_extract_customer_id",
+            "type": "data.transform",
+            "name": "Extract Customer ID",
+            "dependsOn": [
+              "get_order"
+            ],
+            "config": {
+              "expression": "[.outputs.get_order.body.customer_id]"
+            }
+          },
+          {
+            "key": "api_eval_desk_get_ticket",
+            "type": "api.eval_desk.getTicket",
+            "name": "Get Ticket t1",
+            "dependsOn": [
+              "data_transform_extract_customer_id"
+            ],
+            "config": {
+              "id": "t1"
+            }
+          },
+          {
+            "key": "add_ticket_comment",
+            "type": "api.eval_desk.addTicketComment",
+            "name": "Add Ticket Comment",
+            "dependsOn": [
+              "api_eval_desk_get_ticket"
+            ],
+            "config": {
+              "body": {
+                "public": false,
+                "text": "Customer has a very late order"
+              },
+              "id": "t1"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "escalate_late_orders"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "at": "2026-11-11T02:38:38Z",
+    "cases": 22,
+    "compiled": 17,
+    "executed": true,
+    "mapModel": "ollama/qwen3:8b",
+    "medianCompileMs": 56739,
+    "neededRepair": 7,
+    "passed": 6,
+    "reduceModel": "ollama/qwen3:8b",
+    "rightShape": 17
+  }
+}

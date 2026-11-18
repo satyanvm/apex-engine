@@ -16,6 +16,7 @@ import (
 	"github.com/satyanvm/apex-engine/internal/catalog"
 	"github.com/satyanvm/apex-engine/internal/compiler"
 	"github.com/satyanvm/apex-engine/internal/netguard"
+	"github.com/satyanvm/apex-engine/internal/oauth"
 	"github.com/satyanvm/apex-engine/internal/store"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
@@ -31,6 +32,12 @@ type Activities struct {
 	Store *store.Store
 	// Complete runs an agent.llm call; replaced in tests.
 	Complete func(ctx context.Context, model, system, user string) (string, error)
+	// NotifyURL, when set, receives a Slack-style {"text":...} POST each time a
+	// run stops for a human. PublicURL makes that message link to the run.
+	NotifyURL, PublicURL string
+	// PiecesURL is the Activepieces runner (pieces/server.mjs). Empty means
+	// piece nodes fail with that reason. PiecesToken authenticates to it.
+	PiecesURL, PiecesToken string
 }
 
 // DefaultComplete calls the configured model.
@@ -58,7 +65,12 @@ func (a *Activities) FinishNode(ctx context.Context, in FinishNodeInput) error {
 	if in.Output != nil {
 		out = in.Output
 	}
-	return a.Store.NodeFinish(ctx, in.RunID, in.Key, in.Status, out, in.Error)
+	return a.Store.NodeFinish(ctx, store.NodeRef{RunID: in.RunID, Key: in.Key, HasItem: in.HasItem, Index: in.Index}, in.Status, out, in.Error)
+}
+
+// CopyPrior carries a finished loop's body rows over from the run being resumed.
+func (a *Activities) CopyPrior(ctx context.Context, in CopyPriorInput) error {
+	return a.Store.CopyPrior(ctx, in.RunID, in.Prior, in.Keys)
 }
 
 // FinishRun closes the run.
@@ -68,8 +80,57 @@ func (a *Activities) FinishRun(ctx context.Context, in FinishRunInput) error {
 
 // CreateScheduledRun inserts the row for a scheduled run; a retry finds it present.
 func (a *Activities) CreateScheduledRun(ctx context.Context, in ScheduledInput) error {
-	_, _, err := a.Store.CreateRun(ctx, in.Tenant, in.RunID, in.WorkflowID, "sched:"+in.RunID, in.Nodes, in.Input, in.CatalogIDs)
+	meta := store.RunMeta{Name: in.Name, SavedWorkflow: in.WorkflowRef, Source: "schedule", StartedBy: "schedule"}
+	_, _, err := a.Store.CreateRun(ctx, in.Tenant, in.RunID, in.WorkflowID, "sched:"+in.RunID, in.Nodes, in.Input, in.CatalogIDs, meta)
 	return err
+}
+
+// LoadSavedWorkflow reads the graph a scheduled tick should run. A deleted
+// workflow fails the tick with the reason instead of retrying.
+func (a *Activities) LoadSavedWorkflow(ctx context.Context, tenant, id string) (SavedGraph, error) {
+	wf, err := a.Store.GetWorkflow(ctx, tenant, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return SavedGraph{}, fatal("workflow %s no longer exists", id)
+	}
+	if err != nil {
+		return SavedGraph{}, err
+	}
+	return SavedGraph{Name: wf.Name, Nodes: wf.Nodes, Input: wf.DefaultInput, CatalogIDs: wf.CatalogIDs, CallbackURL: wf.CallbackURL}, nil
+}
+
+// notifyApproval tells a person a run is waiting. It is best effort: a chat
+// outage must not fail the run.
+func (a *Activities) notifyApproval(ctx context.Context, in NodeInput, message string) {
+	if a.NotifyURL == "" {
+		return
+	}
+	if len(message) > 500 {
+		message = message[:500] + "..."
+	}
+	text := fmt.Sprintf("Approval needed on %s: %s", in.Node.Name, message)
+	if a.PublicURL != "" {
+		text += "\n" + strings.TrimSuffix(a.PublicURL, "/") + "/#/runs/" + in.RunID
+	} else {
+		text += "\nRun " + in.RunID
+	}
+	body, err := json.Marshal(map[string]string{"text": text})
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.NotifyURL, bytes.NewReader(body))
+	if err != nil {
+		activity.GetLogger(ctx).Warn("approval notification", "error", err.Error())
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		activity.GetLogger(ctx).Warn("approval notification", "error", err.Error())
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 // ExecuteNode runs one node. Credentials are read here, so they never enter
@@ -77,7 +138,22 @@ func (a *Activities) CreateScheduledRun(ctx context.Context, in ScheduledInput) 
 func (a *Activities) ExecuteNode(ctx context.Context, in NodeInput) (NodeResult, error) {
 	stop := startHeartbeat(ctx)
 	defer stop()
-	if err := a.Store.NodeStart(ctx, in.RunID, in.Node.Key); err != nil {
+	ref := store.NodeRef{RunID: in.RunID, Key: in.Node.Key, HasItem: in.HasItem, Index: in.Index}
+	if in.ResumeOf != "" {
+		out, ok, err := a.Store.PriorOutput(ctx, in.Tenant, in.ResumeOf, ref)
+		if err != nil {
+			return NodeResult{}, err
+		}
+		if ok {
+			// It succeeded in the run being resumed: carry the result over
+			// instead of doing it again.
+			if err := a.Store.NodeReuse(ctx, ref, out); err != nil {
+				return NodeResult{}, err
+			}
+			return NodeResult{Output: out, Passed: priorPassed(in.Node.Type, out), Reused: true}, nil
+		}
+	}
+	if err := a.Store.NodeStart(ctx, ref); err != nil {
 		return NodeResult{}, err
 	}
 	scope := Scope{Input: in.Input, Outputs: in.Upstream, Item: in.Item, HasItem: in.HasItem, Loop: in.Loop}
@@ -86,18 +162,95 @@ func (a *Activities) ExecuteNode(ctx context.Context, in NodeInput) (NodeResult,
 		if err != nil {
 			return NodeResult{}, fatal("%s", err)
 		}
-		return NodeResult{}, a.Store.NodeFinish(ctx, in.RunID, in.Node.Key, store.StatusWaiting, map[string]any{"message": message}, "")
+		out := map[string]any{"message": message, "token": in.ApprovalToken}
+		if err := a.Store.NodeFinish(ctx, ref, store.StatusWaiting, out, ""); err != nil {
+			return NodeResult{}, err
+		}
+		if !in.Preview {
+			a.notifyApproval(ctx, in, message)
+		}
+		return NodeResult{Output: out}, nil
 	}
 	res, err := a.dispatch(ctx, in, scope)
+	if err != nil && in.Preview && nonRetryable(err) && usesPlanned(in.Upstream) {
+		// The step needs something a skipped write would have returned, so the
+		// preview cannot say what it would do. It says that instead of failing.
+		res, err = planned("unknown", map[string]any{
+			"reason": "this step uses the result of a step the preview did not run", "detail": rootMessage(err)}), nil
+		if in.Node.Type == "logic.loop" {
+			res.Output["items"], res.Output["count"] = []any{}, float64(0)
+		}
+	}
 	if err != nil {
 		return NodeResult{}, err
 	}
-	if in.Node.Type != "logic.loop" { // a loop finishes after its fan-out
-		if err := a.Store.NodeFinish(ctx, in.RunID, in.Node.Key, store.StatusSuccess, res.Output, ""); err != nil {
+	// A loop finishes after its fan-out and a wait after its timer; the
+	// workflow records those.
+	if in.Node.Type != "logic.loop" && in.Node.Type != "logic.wait" {
+		if err := a.Store.NodeFinish(ctx, ref, store.StatusSuccess, res.Output, ""); err != nil {
 			return NodeResult{}, err
 		}
 	}
 	return res, nil
+}
+
+// planned is what a preview records in place of doing something.
+func planned(kind string, detail map[string]any) NodeResult {
+	detail["kind"] = kind
+	return NodeResult{Output: map[string]any{"preview": true, "planned": detail}, Passed: true}
+}
+
+// isRead reports whether an HTTP method only reads. A preview sends those.
+func isRead(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+}
+
+func nonRetryable(err error) bool {
+	var app *temporal.ApplicationError
+	return errors.As(err, &app) && app.NonRetryable()
+}
+
+func usesPlanned(upstream map[string]map[string]any) bool {
+	for _, out := range upstream {
+		if on, _ := out["preview"].(bool); on {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyOf returns a request's body as JSON when it is JSON, for showing a person.
+func bodyOf(req *http.Request) any {
+	if req.GetBody == nil {
+		return nil
+	}
+	rc, err := req.GetBody()
+	if err != nil {
+		return nil
+	}
+	defer rc.Close()
+	raw, _ := io.ReadAll(io.LimitReader(rc, maxBodyBytes))
+	if len(raw) == 0 {
+		return nil
+	}
+	var parsed any
+	if json.Unmarshal(raw, &parsed) == nil {
+		return parsed
+	}
+	return string(raw)
+}
+
+// priorPassed recovers a gate's decision from its stored output.
+func priorPassed(nodeType string, out map[string]any) bool {
+	switch nodeType {
+	case "logic.branch", "logic.filter":
+		passed, _ := out["passed"].(bool)
+		return passed
+	case "logic.approval":
+		approved, _ := out["approved"].(bool)
+		return approved
+	}
+	return true
 }
 
 // startHeartbeat reports liveness until stopped. The SDK throttles the calls.
@@ -149,10 +302,16 @@ func (a *Activities) dispatch(ctx context.Context, in NodeInput, scope Scope) (N
 		return NodeResult{Output: map[string]any{"passed": ok, "condition": expr}, Passed: ok}, nil
 	case t == "logic.loop":
 		return a.loop(in, scope)
+	case t == "logic.wait":
+		return waitNode(in, scope)
+	case t == "data.transform":
+		return transformNode(ctx, in, scope)
 	case strings.HasPrefix(t, "api."):
 		return a.apiNode(ctx, in, scope)
 	case strings.HasPrefix(t, "mcp."):
 		return a.mcpNode(ctx, in, scope)
+	case strings.HasPrefix(t, "piece."):
+		return a.pieceNode(ctx, in, scope)
 	}
 	return NodeResult{}, fatal("unsupported node type %q", t)
 }
@@ -238,6 +397,9 @@ func (a *Activities) httpNode(ctx context.Context, in NodeInput, scope Scope) (N
 	if u, err := url.Parse(target); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return NodeResult{}, fatal("invalid url %q", target)
 	}
+	if in.Preview && !isRead(method) {
+		return planned("call", map[string]any{"tool": "HTTP request", "method": method, "url": target, "body": decodeJSONString(c["body"])}), nil
+	}
 	var body io.Reader
 	if c["body"] != nil && str(c["body"]) != "" {
 		body = strings.NewReader(str(c["body"]))
@@ -313,55 +475,6 @@ func (a *Activities) findImported(ctx context.Context, in NodeInput) (*store.Cat
 	return nil, compiler.CatalogNode{}, fatal("no catalog on this run defines node type %q", in.Node.Type)
 }
 
-func (a *Activities) apiNode(ctx context.Context, in NodeInput, scope Scope) (NodeResult, error) {
-	c, spec, err := a.findImported(ctx, in)
-	if err != nil {
-		return NodeResult{}, err
-	}
-	rendered, err := scope.Render(in.Node.Config)
-	if err != nil {
-		return NodeResult{}, fatal("%s", err)
-	}
-	cfg := rendered.(map[string]any)
-	req, err := buildAPIRequest(ctx, c.BaseURL, spec, cfg)
-	if err != nil {
-		return NodeResult{}, fatal("%s", err)
-	}
-	headers, err := a.Store.Credentials(ctx, in.Tenant, c.ID)
-	if err != nil {
-		return NodeResult{}, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	if req.Method != http.MethodGet {
-		// Stable across retries, so servers that honour it dedupe a repeated call.
-		suffix := ""
-		if in.HasItem {
-			for _, l := range in.Loop {
-				suffix = ":" + str(l.(map[string]any)["index"])
-			}
-		}
-		req.Header.Set("Idempotency-Key", in.RunID+":"+in.Node.Key+suffix)
-	}
-	resp, err := netguard.Client(httpTimeout, false).Do(req)
-	if err != nil {
-		return NodeResult{}, transportError(err)
-	}
-	defer resp.Body.Close()
-	parsed, err := readBody(resp)
-	if err != nil {
-		return NodeResult{}, err
-	}
-	if retryableStatus(resp.StatusCode) {
-		return NodeResult{}, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, c.Name, snippet(parsed))
-	}
-	if resp.StatusCode >= 300 {
-		return NodeResult{}, fatal("HTTP %d from %s: %s", resp.StatusCode, c.Name, snippet(parsed))
-	}
-	return NodeResult{Output: map[string]any{"status": float64(resp.StatusCode), "body": parsed}}, nil
-}
-
 // buildAPIRequest fills an imported operation from a node's rendered config.
 func buildAPIRequest(ctx context.Context, base string, spec compiler.CatalogNode, cfg map[string]any) (*http.Request, error) {
 	path, _ := spec.Exec["path"].(string)
@@ -430,9 +543,25 @@ func (a *Activities) mcpNode(ctx context.Context, in NodeInput, scope Scope) (No
 	if err != nil {
 		return NodeResult{}, fatal("%s", err)
 	}
-	headers, err := a.Store.Credentials(ctx, in.Tenant, c.ID)
+	if in.Preview && !isTrue(spec.Exec["readOnly"]) {
+		// An MCP tool does not say reliably whether it changes anything, so a
+		// preview runs only the ones their server marks read-only.
+		return planned("call", map[string]any{"tool": c.Name, "operation": spec.Label, "arguments": args}), nil
+	}
+	creds, err := a.Store.Credentials(ctx, in.Tenant, c.ID)
 	if err != nil {
 		return NodeResult{}, err
+	}
+	headers := map[string]string{}
+	for k, v := range creds.Headers {
+		headers[k] = v
+	}
+	if creds.OAuth != nil {
+		token, err := oauth.Token(ctx, a.Store, in.Tenant, c.ID, false)
+		if err != nil {
+			return NodeResult{}, oauthError(err)
+		}
+		headers["Authorization"] = "Bearer " + token
 	}
 	client, err := catalog.NewMCPClient(ctx, c.BaseURL, headers, httpTimeout)
 	if err != nil {

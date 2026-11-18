@@ -1,0 +1,165 @@
+APEX-ENGINE: MAKING IT A PRODUCT PEOPLE CAN USE
+Started 2026-11-09. This file is the working plan and log.
+
+
+0. CORRECTION FROM SATYA (2026-11-09): "it's engine, so the usability should be
+   of the engine."
+
+The first pass below built an app on top. An engine is used from other people's
+code, and every package was under internal/, so nobody could import it. Second
+pass, engine first:
+
+  a. engine/    embed it: New(ctx, Config), mount Handler() in your own server
+  b. client/    typed Go client, standard library only
+  c. apexctl    CLI for terminals and CI: plans are files, exit codes mean things
+  d. Events     per-run callbackUrl, signed, retried, so hosts need not poll
+  e. /openapi.yaml  the contract, so any language can generate a client
+  f. Console    off by default in the engine. An optional inspector, not the point.
+
+Not doing yet: an MCP server so agents can call the engine, Python and TypeScript
+clients (generate them from the spec), running without Postgres and Temporal.
+
+Second pass, done and checked:
+  - engine, client, apexctl, signed events and /openapi.yaml are built.
+  - Integration tests against real Postgres and Temporal pass, including a test
+    that uses the engine only through its public packages, a Go client driving a
+    run through approval, signed events, a retried delivery with the same id, and
+    tenants having different signing keys.
+  - A test fails if openapi.yaml and the served routes ever disagree.
+  - Unit tests cover apexctl's commands and exit codes against a stand-in server.
+
+Second pass, not checked:
+  - apexctl and ./apex against a running Docker stack. Docker and the local model
+    were kept off because the laptop was lagging.
+  - The "./apex up" output, "./apex env" and "./apex console" changes.
+  - go install ...@latest needs this pushed first.
+
+
+1. WHERE IT STOOD
+
+Good engine, no product. The compiler, validator, Temporal runtime, SSRF guard
+and credential sealing are real and tested. But to use it you had to:
+
+  - hand-fill four secrets in .env, including a Gemini key (the only hosted
+    provider a new user could pick, and the engine refused to boot without it)
+  - drive everything with curl, copy a plan out of one JSON response and paste
+    it into another
+  - keep your own copy of every plan, because plans were not saved anywhere
+  - find out a run was waiting for approval by polling for it
+  - start runs only by API call or cron; no way for another system to trigger one
+
+
+2. WHO IT IS FOR
+
+A developer or ops person who has internal APIs or MCP servers and wants
+"do this in plain English" automation they can review before it touches
+anything, and that keeps going when a machine dies.
+
+
+3. WHAT THE RESEARCH SAID
+
+  - Reviewers of AI workflow builders mostly complain that output looks right
+    but is broken: wrong node types, over-built graphs, and advice to never let
+    AI change production directly. apex-engine already rejects invented tools
+    and fields at compile time. Lead with that, and make review the centre of
+    the screen. (Sources are anecdotal, not a survey.)
+      https://metacast.app/podcast/ai-fire-daily/YfRCG9xp/230-max-i-stress-tested-n8n-s-ai-workflow-builder-here-s-the-brutal-truth/6vd5vHjb
+      https://bd.linkedin.com/in/naemrabbani
+  - Inngest's onboarding is a local dashboard where you trigger a function and
+    watch its steps. Copy that shape: open a page, run something, watch it.
+      https://www.inngest.com/docs/quick-start
+  - n8n's Docker route still needs an encryption key and host settings by hand.
+    A script can generate all of that.
+      https://logicworkflow.pages.dev/blog/n8n-docker-setup
+  - temporalio/auto-setup, which docker-compose.yml uses, is deprecated and the
+    official compose repo was archived in January 2026. The pinned image still
+    works. See section 7.
+      https://community.temporal.io/t/feedback-request-retiring-temporalio-auto-setup-docker-image/165
+      https://github.com/temporalio/docker-compose
+
+
+4. THE TARGET FIRST FIVE MINUTES
+
+  git clone ... && cd apex-engine && ./apex up
+  -> no files to edit, secrets generated, browser opens already signed in
+  -> one click installs sample tools and a sample workflow
+  -> Run it, watch the graph light up, approve a refund, see the result
+  -> type a sentence, get a graph, review it, save it
+  -> works with no API key until you want to compile, and a local Ollama
+     model counts as a key
+
+
+5. WHAT I AM BUILDING
+
+  a. Web console inside the binary, served at /. No Node, no build step.
+     Build (prompt, live compile stages, graph, review, edit config, save or run),
+     Workflows, Runs (live graph, approvals, node output), Tools.
+  b. Saved workflows: create, list, edit, delete, run. A workflow keeps its
+     prompt, graph, tools and default input.
+  c. Triggers: an inbound webhook per workflow (off by default, rotatable) and
+     schedules attached to a workflow that always run its latest saved version.
+  d. Approval notifications: Slack-compatible webhook when a run needs a human.
+  e. More model providers: Anthropic and any OpenAI-compatible endpoint, picked
+     automatically from whichever key is set. Boot no longer needs a key.
+  f. ./apex up | down | status | logs | open | key | reset. Only Docker needed.
+  g. Sample tools in Compose, installed by one click, not in production.
+  h. README rewritten for someone new; API docs extended.
+
+
+6. WHAT I AM NOT BUILDING (AND WHY)
+
+  - Accounts, teams, SSO. API keys already separate tenants. Needed for a hosted
+    SaaS, not for self-hosted use.
+  - A drag-and-drop canvas. Review and config editing cover the need; a canvas
+    is a large build that competes with n8n on n8n's ground.
+  - Replacing Postgres with SQLite for a no-Docker binary. Too much risk for
+    the gain now that Docker is the only requirement.
+  - Hosting it anywhere. That needs your accounts and your decision.
+
+
+7. KNOWN RISKS TO COME BACK TO
+
+  - temporalio/auto-setup is deprecated. Pinned, so nothing breaks today, but it
+    gets no updates. Move production to temporalio/server plus an admin-tools
+    schema job before a real deployment.
+  - Compile quality has still not been measured across a golden set.
+
+
+8. LOG
+
+  [x] Engine: providers, saved workflows, webhooks, schedules, notifications
+  [x] Web console
+  [x] ./apex and Compose
+  [x] Fresh-start test as a new user
+  [x] Docs
+  [ ] Not committed yet
+
+  Checked for real:
+  - Unit tests and integration tests (real Postgres and Temporal) pass. The
+    integration run predates the last prompt and error-message wording change;
+    unit tests were rerun after it.
+  - ./apex up from no .env: about 4 minutes the first time, no files edited.
+  - In a browser: sign-in link, add sample, run, approve, refund happened, $310
+    order correctly turned down by policy. Edit validation blocks a bad
+    reference. Save, webhook on, schedule added.
+  - curl to the webhook from outside started a run with the payload as input.
+  - A real sentence compiled on local qwen3:8b into 8 validated steps in 80s.
+
+  Found by testing, and fixed:
+  - The validator let a path go into a plain value (outputs.gate.passed.body)
+    and did not check gate conditions at all. That graph compiled, then failed
+    at run time. Both are now rejected at compile time.
+  - agent.llm steps were forced to answer in JSON. They now answer in prose.
+  - The planner was never told gates do not pass data through. It is now.
+
+  NOT checked (stopped early because the laptop was lagging):
+  - The same prompt after the planner fix. Before the fix, with the stricter
+    validator, qwen3:8b failed with a clear reason after 3 tries.
+  - Killing the engine while a run waits for approval, in the Docker stack.
+    scripts/crash-demo.sh covers worker death but was not rerun.
+  - Anthropic, OpenAI and Gemini against their real APIs: no keys here. The
+    Anthropic and OpenAI clients are tested against stand-in servers only.
+  - The Tools page and phone-width layout in a browser.
+
+  Note: the Anthropic client turns on server-side refusal fallback for Claude
+  Opus 5.5 and similar models.

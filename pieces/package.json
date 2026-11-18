@@ -1,0 +1,52 @@
+{
+  "name": "apex-pieces-runner",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Runs Activepieces piece actions for apex-engine. Add or remove pieces here, then reinstall.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@activepieces/piece-airtable": "*",
+    "@activepieces/piece-asana": "*",
+    "@activepieces/piece-clickup": "*",
+    "@activepieces/piece-discord": "*",
+    "@activepieces/piece-freshdesk": "*",
+    "@activepieces/piece-github": "*",
+    "@activepieces/piece-gitlab": "*",
+    "@activepieces/piece-gmail": "*",
+    "@activepieces/piece-google-calendar": "*",
+    "@activepieces/piece-google-docs": "*",
+    "@activepieces/piece-google-drive": "*",
+    "@activepieces/piece-google-sheets": "*",
+    "@activepieces/piece-hubspot": "*",
+    "@activepieces/piece-intercom": "*",
+    "@activepieces/piece-jira-cloud": "*",
+    "@activepieces/piece-json": "*",
+    "@activepieces/piece-linear": "*",
+    "@activepieces/piece-mailchimp": "*",
+    "@activepieces/piece-microsoft-outlook": "*",
+    "@activepieces/piece-microsoft-teams": "*",
+    "@activepieces/piece-monday": "*",
+    "@activepieces/piece-mysql": "*",
+    "@activepieces/piece-notion": "*",
+    "@activepieces/piece-pagerduty": "*",
+    "@activepieces/piece-pipedrive": "*",
+    "@activepieces/piece-postgres": "*",
+    "@activepieces/piece-salesforce": "*",
+    "@activepieces/piece-sendgrid": "*",
+    "@activepieces/piece-shopify": "*",
+    "@activepieces/piece-slack": "*",
+    "@activepieces/piece-stripe": "*",
+    "@activepieces/piece-telegram-bot": "*",
+    "@activepieces/piece-todoist": "*",
+    "@activepieces/piece-trello": "*",
+    "@activepieces/piece-twilio": "*",
+    "@activepieces/piece-zendesk": "*"
+  }
+}

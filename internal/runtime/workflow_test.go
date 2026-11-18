@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -279,7 +280,7 @@ func approvalDag() []compiler.GraphNode {
 func TestApprovalApprovedContinues(t *testing.T) {
 	rec, _ := exec(t, approvalDag(), nil, func(env *testsuite.TestWorkflowEnvironment) {
 		env.RegisterDelayedCallback(func() {
-			env.SignalWorkflow(SignalName("ok"), ApprovalSignal{Approved: true, Note: "lgtm"})
+			env.SignalWorkflow(SignalName("ok"), ApprovalSignal{Approved: true, Note: "lgtm", Token: "ok"})
 		}, time.Hour)
 	})
 	if rec.run.Status != statusSucceeded || rec.finished["ok"] != statusSucceeded {
@@ -292,7 +293,7 @@ func TestApprovalApprovedContinues(t *testing.T) {
 
 func TestApprovalRejectedSkipsDownstream(t *testing.T) {
 	rec, _ := exec(t, approvalDag(), nil, func(env *testsuite.TestWorkflowEnvironment) {
-		env.RegisterDelayedCallback(func() { env.SignalWorkflow(SignalName("ok"), ApprovalSignal{Approved: false}) }, time.Hour)
+		env.RegisterDelayedCallback(func() { env.SignalWorkflow(SignalName("ok"), ApprovalSignal{Approved: false, Token: "ok"}) }, time.Hour)
 	})
 	if rec.run.Status != statusSucceeded || rec.finished["send"] != "skipped" {
 		t.Fatalf("run=%+v finished=%v", rec.run, rec.finished)
@@ -327,5 +328,39 @@ func TestCycleFailsTheRun(t *testing.T) {
 	rec, _ := exec(t, []compiler.GraphNode{n("a", "agent.llm", "b"), n("b", "agent.llm", "a")}, nil, nil)
 	if rec.run.Status != statusFailed {
 		t.Fatalf("run=%+v", rec.run)
+	}
+}
+
+// A decision sent twice must not carry over to the next item of a loop.
+func TestRepeatedApprovalDoesNotApproveTheNextLoopItem(t *testing.T) {
+	nodes := []compiler.GraphNode{n("each", "logic.loop"), n("ok", "logic.approval", "each"), n("send", "agent.llm", "ok")}
+	var sent []any
+	rec, _ := exec(t, nodes, func(in NodeInput) (NodeResult, error) {
+		switch in.Node.Key {
+		case "each":
+			return NodeResult{Output: map[string]any{"items": []any{"x", "y"}, "count": float64(2)}}, nil
+		case "send":
+			sent = append(sent, in.Item)
+		}
+		return NodeResult{Output: map[string]any{"text": in.Node.Key}}, nil
+	}, func(env *testsuite.TestWorkflowEnvironment) {
+		env.RegisterDelayedCallback(func() {
+			first := ApprovalSignal{Approved: true, Token: ApprovalToken("ok", true, 0)}
+			env.SignalWorkflow(SignalName("ok"), first)
+			env.SignalWorkflow(SignalName("ok"), first) // the double click
+		}, time.Hour)
+	})
+	if rec.run.Status != statusSucceeded {
+		t.Fatalf("run = %+v", rec.run)
+	}
+	if len(sent) != 1 || sent[0] != "x" {
+		t.Fatalf("sent for %v; only the first item was approved", sent)
+	}
+}
+
+func TestNestedLoopIsRejected(t *testing.T) {
+	rec, _ := exec(t, []compiler.GraphNode{n("outer", "logic.loop"), n("inner", "logic.loop", "outer"), n("do", "agent.llm", "inner")}, nil, nil)
+	if rec.run.Status != statusFailed || !strings.Contains(rec.run.Error, "nested loops") {
+		t.Fatalf("run = %+v", rec.run)
 	}
 }

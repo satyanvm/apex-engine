@@ -38,6 +38,24 @@ func count(name string) {
 	mu.Unlock()
 }
 
+// restock puts refunded orders back once no late order is left, so the demo can
+// be run again and still has something to do. The caller holds mu.
+func restock(want string) {
+	if want != "late" {
+		return
+	}
+	for _, o := range orders {
+		if o.Status == "late" {
+			return
+		}
+	}
+	for i := range orders {
+		if orders[i].Status == "refunded" {
+			orders[i].Status = "late"
+		}
+	}
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -151,6 +169,7 @@ func main() {
 		want := r.URL.Query().Get("status")
 		mu.Lock()
 		defer mu.Unlock()
+		restock(want)
 		for _, o := range orders {
 			if want == "" || o.Status == want {
 				out = append(out, o)

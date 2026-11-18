@@ -1,0 +1,74 @@
+openapi: 3.0.3
+info: { title: CRM, version: "1" }
+servers: [{ url: http://localhost:8799/crm }]
+paths:
+  /deals:
+    get:
+      operationId: listDeals
+      summary: List deals
+      description: Lists deals, 2 per page unless per_page says otherwise. Each has id, name, amount (dollars), stage (open, won or lost), owner, days_idle and contact_id.
+      parameters:
+        - { name: stage, in: query, description: "open, won or lost", schema: { type: string } }
+        - { name: owner, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Deals
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Deal" } } } }
+  /deals/{id}:
+    patch:
+      operationId: updateDeal
+      summary: Change a deal, for example its stage
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { stage: { type: string }, amount: { type: number } } } } }
+      responses: { "200": { description: Updated } }
+  /deals/{id}/tasks:
+    post:
+      operationId: createDealTask
+      summary: Create a task on a deal
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [title], properties: { title: { type: string } } } } }
+      responses: { "200": { description: Created } }
+  /contacts/{id}:
+    get:
+      operationId: getContact
+      summary: Get one contact
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: The contact, content: { application/json: { schema: { $ref: "#/components/schemas/Contact" } } } }
+    delete:
+      operationId: deleteContact
+      summary: Delete a contact permanently
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Deleted } }
+  /contacts/{id}/emails:
+    post:
+      operationId: emailContact
+      summary: Send an email to a contact
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [subject, body], properties: { subject: { type: string }, body: { type: string } } }
+      responses: { "200": { description: Sent } }
+components:
+  schemas:
+    Deal:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        amount: { type: number }
+        stage: { type: string }
+        owner: { type: string }
+        days_idle: { type: integer }
+        contact_id: { type: string }
+    Contact:
+      type: object
+      properties: { id: { type: string }, name: { type: string }, email: { type: string } }

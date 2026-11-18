@@ -2,8 +2,8 @@
 # Kills the worker with SIGKILL in the middle of a run, restarts it, and shows
 # that finished nodes were not repeated.
 #
-# Needs: go, curl, jq, and env DATABASE_URL, TEMPORAL_HOSTPORT, APEX_SECRET_KEY,
-# GEMINI_API_KEY. Run from the repository root.
+# Needs: go, curl, jq, env DATABASE_URL, TEMPORAL_HOSTPORT and APEX_SECRET_KEY,
+# and a Temporal server. No model is needed. Run from the repository root.
 set -euo pipefail
 
 KEY=crash-demo-key-0123456789

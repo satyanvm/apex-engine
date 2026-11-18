@@ -1,10 +1,10 @@
-# Local stack: docker compose up --build
+# Local stack. ./apex up runs this for you; it generates .env first.
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: apex
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env, or run ./apex up}
       POSTGRES_DB: apex
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -32,18 +32,71 @@ services:
     environment:
       DATABASE_URL: postgres://apex:${POSTGRES_PASSWORD}@postgres:5432/apex
       TEMPORAL_HOSTPORT: temporal:7233
-      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
-      APEX_SECRET_KEY: ${APEX_SECRET_KEY:?set APEX_SECRET_KEY in .env}
-      APEX_API_KEYS: ${APEX_API_KEYS:?set APEX_API_KEYS in .env}
-      PLANNER_MAP_MODEL: ${PLANNER_MAP_MODEL:-gemini-3.1-flash-lite}
-      PLANNER_MODEL: ${PLANNER_MODEL:-gemini-3.5-flash}
+      APEX_SECRET_KEY: ${APEX_SECRET_KEY:?set APEX_SECRET_KEY in .env, or run ./apex up}
+      # Either or both. APEX_API_KEYS names tenants up front; APEX_PLATFORM_KEY
+      # is one key for a product with its own customers.
+      APEX_API_KEYS: ${APEX_API_KEYS:-}
+      APEX_PLATFORM_KEY: ${APEX_PLATFORM_KEY:-}
+      # Models. Set any one key; each tier defaults to whichever provider has one.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      PLANNER_MAP_MODEL: ${PLANNER_MAP_MODEL:-}
+      PLANNER_MODEL: ${PLANNER_MODEL:-}
+      APEX_AGENT_MODEL: ${APEX_AGENT_MODEL:-}
       APEX_COMPILE_RPM: ${APEX_COMPILE_RPM:-30}
       APEX_ALLOW_PRIVATE_NETWORK: ${APEX_ALLOW_PRIVATE_NETWORK:-0}
+      APEX_DEMO_URL: ${APEX_DEMO_URL:-}
+      APEX_CONSOLE: ${APEX_CONSOLE:-0}
+      APEX_NOTIFY_WEBHOOK: ${APEX_NOTIFY_WEBHOOK:-}
+      APEX_PUBLIC_URL: ${APEX_PUBLIC_URL:-http://localhost:${APEX_PORT:-8700}}
+      # Activepieces pieces as tools. ./apex pieces turns this on.
+      APEX_PIECES_URL: ${APEX_PIECES_URL:-}
+      APEX_PIECES_TOKEN: ${APEX_PIECES_TOKEN:-}
+      # Prometheus metrics at /metrics, for whoever presents this token.
+      APEX_METRICS_TOKEN: ${APEX_METRICS_TOKEN:-}
+      # Guard rails: a cap on one tenant's unfinished runs, how long finished
+      # runs and audit entries are kept, and a rule that deletes (or any
+      # change) need an approval step.
+      APEX_MAX_OPEN_RUNS: ${APEX_MAX_OPEN_RUNS:-}
+      APEX_RETENTION_DAYS: ${APEX_RETENTION_DAYS:-}
+      APEX_AUDIT_RETENTION_DAYS: ${APEX_AUDIT_RETENTION_DAYS:-}
+      APEX_REQUIRE_APPROVAL: ${APEX_REQUIRE_APPROVAL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres: { condition: service_healthy }
       temporal: { condition: service_started }
     ports:
       - "127.0.0.1:${APEX_PORT:-8700}:8700"
+    restart: unless-stopped
+
+  # Sample Orders API and MCP server, reachable only from the engine.
+  demo:
+    profiles: [demo]
+    build: .
+    entrypoint: ["/demo-api"]
+    environment:
+      DEMO_BASE_URL: http://demo:8701
+    restart: unless-stopped
+
+  # Runs Activepieces piece actions for the engine. It executes third-party
+  # code and is handed credentials, so it publishes no port: only the engine can
+  # reach it, and only with the shared token.
+  pieces:
+    profiles: [pieces]
+    build: ./pieces
+    environment:
+      PIECES_TOKEN: ${APEX_PIECES_TOKEN:?run ./apex pieces, or set APEX_PIECES_TOKEN in .env}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:

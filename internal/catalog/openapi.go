@@ -224,6 +224,10 @@ func (d doc) operationNode(slug, path, method string, item, op map[string]any, u
 		})
 		params = append(params, map[string]any{"name": name, "in": in})
 	}
+	var paging map[string]any
+	if method == "get" {
+		paging = detectPaging(params)
+	}
 	hasBody := false
 	if body := d.deref(op["requestBody"]); body != nil {
 		hasBody = true
@@ -251,11 +255,75 @@ func (d doc) operationNode(slug, path, method string, item, op map[string]any, u
 	if tags, _ := op["tags"].([]any); len(tags) > 0 {
 		group, _ = tags[0].(string)
 	}
-	return compiler.CatalogNode{
-		ID: "api." + slug + "." + id, Label: clip(label, 80), Description: clip(text, maxDescLen),
-		Kind: "action", Runtime: "http", Config: fields, Outputs: []string{"status", "body"},
-		Exec: map[string]any{"method": strings.ToUpper(method), "path": path, "params": params, "hasBody": hasBody, "group": group},
+	outputs := []string{"status", "body"}
+	exec := map[string]any{"method": strings.ToUpper(method), "path": path, "params": params, "hasBody": hasBody, "group": group}
+	// What the spec says the answer looks like. The compiler uses it to reject
+	// a reference to a field the response does not have.
+	if kind, fields := d.responseShape(op); kind != "" {
+		exec["bodyType"] = kind
+		if len(fields) > 0 {
+			exec["bodyFields"] = fields
+		}
 	}
+	text = clip(text, maxDescLen)
+	if paging != nil {
+		exec["pagination"] = paging
+		outputs = []string{"status", "body", "items", "pages", "truncated"}
+		text += " Paged list: outputs.<key>.items is the list from the first page, or from every page when allPages is true."
+		fields = append(fields,
+			compiler.CatalogField{Key: "allPages", Label: "Fetch every page", Control: "select", Options: []string{"true", "false"},
+				Help: "true collects every page into outputs.<key>.items. Default false: the first page only."},
+			compiler.CatalogField{Key: "maxPages", Label: "Page limit", Control: "text",
+				Help: "Stop after this many pages (default 20, at most 200). outputs.<key>.truncated says whether it stopped early."})
+	}
+	return compiler.CatalogNode{
+		ID: "api." + slug + "." + id, Label: clip(label, 80), Description: text,
+		Kind: "action", Runtime: "http", Config: fields, Outputs: outputs, Exec: exec,
+	}
+}
+
+var (
+	pageParams   = map[string]bool{"page": true, "page_number": true, "pagenumber": true, "pageno": true, "page_no": true, "pagenum": true}
+	offsetParams = map[string]bool{"offset": true, "skip": true, "start": true, "startat": true, "start_at": true, "from": true}
+	cursorParams = map[string]bool{"cursor": true, "page_token": true, "pagetoken": true, "next_token": true, "nexttoken": true,
+		"starting_after": true, "after": true, "continuation": true, "continuation_token": true, "next": true, "marker": true,
+		"next_cursor": true, "page_cursor": true, "start_cursor": true, "since_id": true, "after_id": true}
+	limitParams = map[string]bool{"limit": true, "per_page": true, "perpage": true, "page_size": true, "pagesize": true, "size": true,
+		"count": true, "max_results": true, "maxresults": true, "top": true, "take": true, "first": true}
+)
+
+// detectPaging recognises a list operation from its query parameter names.
+// OpenAPI has no standard way to describe paging, so this is a heuristic over
+// the conventions in common use; an operation it does not recognise is simply
+// not offered allPages.
+func detectPaging(params []any) map[string]any {
+	var cursor, page, offset, limit string
+	for _, raw := range params {
+		p, _ := raw.(map[string]any)
+		if in, _ := p["in"].(string); in != "query" {
+			continue
+		}
+		name, _ := p["name"].(string)
+		switch key := strings.ToLower(name); {
+		case cursorParams[key] && cursor == "":
+			cursor = name
+		case pageParams[key] && page == "":
+			page = name
+		case offsetParams[key] && offset == "":
+			offset = name
+		case limitParams[key] && limit == "":
+			limit = name
+		}
+	}
+	switch {
+	case cursor != "":
+		return map[string]any{"style": "cursor", "param": cursor, "limit": limit}
+	case page != "":
+		return map[string]any{"style": "page", "param": page, "limit": limit}
+	case offset != "":
+		return map[string]any{"style": "offset", "param": offset, "limit": limit}
+	}
+	return nil
 }
 
 func (d doc) jsonSchema(holder map[string]any) map[string]any {
@@ -293,6 +361,42 @@ func (d doc) schemaSummary(s map[string]any) string {
 		parts = append(parts, k+": "+t)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// responseShape reports whether the success response is a list or an object,
+// and an object's field names, when the spec says.
+func (d doc) responseShape(op map[string]any) (kind string, fields []any) {
+	responses, _ := op["responses"].(map[string]any)
+	for _, code := range []string{"200", "201", "202"} {
+		r := d.deref(responses[code])
+		if r == nil {
+			continue
+		}
+		s := d.jsonSchema(r)
+		if s == nil {
+			continue
+		}
+		switch t, _ := s["type"].(string); {
+		case t == "array":
+			return "array", nil
+		case t == "object" || s["properties"] != nil:
+			props, _ := s["properties"].(map[string]any)
+			names := make([]string, 0, len(props))
+			for k := range props {
+				names = append(names, k)
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				fields = append(fields, n)
+			}
+			// An object that allows other fields cannot be checked by name.
+			if extra, ok := s["additionalProperties"]; ok && extra != false {
+				fields = nil
+			}
+			return "object", fields
+		}
+	}
+	return "", nil
 }
 
 func (d doc) bodyHint(body map[string]any) string {

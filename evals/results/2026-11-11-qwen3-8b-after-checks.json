@@ -1,0 +1,469 @@
+{
+  "results": [
+    {
+      "id": "shop-refund-late",
+      "prompt": "Refund every late order.",
+      "compiled": true,
+      "compileMs": 82073,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o1/refund",
+        "POST /shop/orders/o2/refund",
+        "POST /shop/orders/o4/refund",
+        "POST /shop/orders/o6/refund"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-refund-late-over-100",
+      "prompt": "Refund every late order with a total over 100 dollars.",
+      "compiled": true,
+      "compileMs": 116020,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o1/refund",
+        "POST /shop/orders/o4/refund",
+        "POST /shop/orders/o6/refund"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-approve-then-refund",
+      "prompt": "For each late order over 200 dollars, ask me to approve and then refund it.",
+      "compiled": true,
+      "compileMs": 190286,
+      "repairs": 2,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o1/refund",
+        "POST /shop/orders/o4/refund"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-rejected-cancel",
+      "prompt": "Cancel any late order that is more than 7 days late, but ask for my approval first.",
+      "compiled": true,
+      "compileMs": 124097,
+      "repairs": 0,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-note-shipped",
+      "prompt": "Add the note 'checked' to every shipped order.",
+      "compiled": true,
+      "compileMs": 191758,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o3/notes"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-coupon-gold",
+      "prompt": "Give every gold customer a 10 percent coupon.",
+      "compiled": true,
+      "compileMs": 172492,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/coupons",
+        "POST /shop/coupons"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-refund-one",
+      "prompt": "Refund order o5.",
+      "compiled": true,
+      "compileMs": 71594,
+      "repairs": 0,
+      "nodes": 2,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/orders/o5/refund"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-email-per-late-order",
+      "prompt": "For every late order, look up the customer and send one apology email per order to that customer's email address.",
+      "compiled": true,
+      "compileMs": 166996,
+      "repairs": 0,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /shop/emails",
+        "POST /shop/emails",
+        "POST /shop/emails",
+        "POST /shop/emails"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "shop-no-match",
+      "prompt": "Refund every late order with a total over 1000 dollars.",
+      "compiled": true,
+      "compileMs": 123871,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-assign-unassigned-urgent",
+      "prompt": "Assign every open urgent ticket that has no assignee to sam.",
+      "compiled": true,
+      "compileMs": 124589,
+      "repairs": 1,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "failed",
+      "runError": "node filter_unassigned: reference not found: outputs.list_tickets.items[].assignee",
+      "calls": [],
+      "missingCalls": [
+        "POST /desk/tickets/t1/assign"
+      ],
+      "unexpectedCalls": [],
+      "passed": false,
+      "plan": {
+        "name": "Assign open urgent unassigned tickets",
+        "description": "Assign all open urgent tickets with no assignee to Sam",
+        "tags": [
+          "prompt"
+        ],
+        "nodes": [
+          {
+            "key": "list_tickets",
+            "type": "api.eval_desk.listTickets",
+            "name": "List open urgent tickets",
+            "dependsOn": [],
+            "config": {
+              "allPages": "true",
+              "priority": "urgent",
+              "status": "open"
+            }
+          },
+          {
+            "key": "filter_unassigned",
+            "type": "logic.filter",
+            "name": "Filter unassigned tickets",
+            "dependsOn": [
+              "list_tickets"
+            ],
+            "config": {
+              "condition": "outputs.list_tickets.items[].assignee == null"
+            }
+          },
+          {
+            "key": "transform_tickets",
+            "type": "data.transform",
+            "name": "Extract ticket IDs",
+            "dependsOn": [
+              "filter_unassigned"
+            ],
+            "config": {
+              "expression": "[.outputs.filter_unassigned.passed[] | {id: .id}]"
+            }
+          },
+          {
+            "key": "loop_tickets",
+            "type": "logic.loop",
+            "name": "Loop through tickets",
+            "dependsOn": [
+              "transform_tickets"
+            ],
+            "config": {
+              "items": "outputs.transform_tickets.result",
+              "onError": "continue"
+            }
+          },
+          {
+            "key": "assign_ticket",
+            "type": "api.eval_desk.assignTicket",
+            "name": "Assign ticket to Sam",
+            "dependsOn": [
+              "loop_tickets"
+            ],
+            "config": {
+              "body": {
+                "assignee": "Sam"
+              },
+              "id": "{{item.id}}"
+            }
+          }
+        ],
+        "defaultInput": {
+          "topic": "Support tickets"
+        }
+      }
+    },
+    {
+      "id": "desk-close-old-pending",
+      "prompt": "Close all pending tickets that have been open more than 48 hours.",
+      "compiled": true,
+      "compileMs": 199402,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t3/close"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-escalate-urgent",
+      "prompt": "Escalate every open urgent ticket.",
+      "compiled": true,
+      "compileMs": 68626,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/escalations",
+        "POST /desk/escalations"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-comment-high",
+      "prompt": "Post the internal comment 'Looking into it' on every open high priority ticket.",
+      "compiled": true,
+      "compileMs": 103076,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t6/comments"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-raise-priority",
+      "prompt": "Set the priority to urgent on every open ticket that has been open more than 10 hours and is not already urgent.",
+      "compiled": true,
+      "compileMs": 123701,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "PATCH /desk/tickets/t6"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-approve-close-low",
+      "prompt": "Ask me before closing each open low priority ticket, then close the ones I approve.",
+      "compiled": true,
+      "compileMs": 133408,
+      "repairs": 1,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t2/close"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "desk-nothing-to-do",
+      "prompt": "Close every open ticket assigned to lee.",
+      "compiled": true,
+      "compileMs": 74573,
+      "repairs": 0,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "crm-task-idle",
+      "prompt": "Create a task titled 'Follow up' on every open deal that has been idle for more than 30 days.",
+      "compiled": true,
+      "compileMs": 116032,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /crm/deals/d1/tasks",
+        "POST /crm/deals/d6/tasks"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "crm-mark-lost",
+      "prompt": "Mark every open deal that has been idle more than 30 days as lost.",
+      "compiled": true,
+      "compileMs": 109467,
+      "repairs": 1,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "PATCH /crm/deals/d1",
+        "PATCH /crm/deals/d6"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "crm-email-big-open",
+      "prompt": "Email the contact of every open deal worth more than 18000 dollars with a short check-in.",
+      "compiled": true,
+      "compileMs": 154137,
+      "repairs": 1,
+      "nodes": 5,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /crm/contacts/k1/emails",
+        "POST /crm/contacts/k2/emails"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "crm-approve-delete",
+      "prompt": "Delete contact k3, but only after I approve.",
+      "compiled": true,
+      "compileMs": 70906,
+      "repairs": 1,
+      "nodes": 3,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "DELETE /crm/contacts/k3"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "crm-summary-only",
+      "prompt": "Summarise the open deals owned by kim. Do not change anything.",
+      "compiled": true,
+      "compileMs": 202128,
+      "repairs": 3,
+      "nodes": 4,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    },
+    {
+      "id": "cross-escalate-and-note",
+      "prompt": "For every late order more than 7 days late, add the note 'escalated to support' to the order and post the internal comment 'Customer has a very late order' on ticket t1.",
+      "compiled": true,
+      "compileMs": 96124,
+      "repairs": 0,
+      "nodes": 6,
+      "structureProblems": [],
+      "executed": true,
+      "runStatus": "succeeded",
+      "calls": [
+        "POST /desk/tickets/t1/comments",
+        "POST /shop/orders/o4/notes"
+      ],
+      "missingCalls": [],
+      "unexpectedCalls": [],
+      "passed": true
+    }
+  ],
+  "summary": {
+    "at": "2026-11-11T08:29:33Z",
+    "cases": 22,
+    "compiled": 22,
+    "executed": true,
+    "mapModel": "ollama/qwen3:8b",
+    "medianCompileMs": 123871,
+    "neededRepair": 15,
+    "passed": 21,
+    "reduceModel": "ollama/qwen3:8b",
+    "rightShape": 22
+  }
+}

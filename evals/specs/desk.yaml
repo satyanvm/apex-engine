@@ -1,0 +1,82 @@
+openapi: 3.0.3
+info: { title: Desk, version: "1" }
+servers: [{ url: http://localhost:8799/desk }]
+paths:
+  /tickets:
+    get:
+      operationId: listTickets
+      summary: List support tickets
+      description: Lists tickets, 2 per page unless per_page says otherwise. Each has id, subject, status (open, pending or closed), priority (low, high or urgent), assignee (a name, or null when nobody has it), customer_email and hours_open.
+      parameters:
+        - { name: status, in: query, description: "open, pending or closed", schema: { type: string } }
+        - { name: priority, in: query, description: "low, high or urgent", schema: { type: string } }
+        - { name: assignee, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Tickets
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Ticket" } } } }
+  /tickets/{id}:
+    get:
+      operationId: getTicket
+      summary: Get one ticket
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: The ticket, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } }
+    patch:
+      operationId: updateTicket
+      summary: Change a ticket's priority or status
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { priority: { type: string }, status: { type: string } } } } }
+      responses: { "200": { description: Updated } }
+  /tickets/{id}/assign:
+    post:
+      operationId: assignTicket
+      summary: Assign a ticket to an agent
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [assignee], properties: { assignee: { type: string } } } } }
+      responses: { "200": { description: Assigned } }
+  /tickets/{id}/close:
+    post:
+      operationId: closeTicket
+      summary: Close a ticket
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Closed } }
+  /tickets/{id}/comments:
+    post:
+      operationId: addTicketComment
+      summary: Add a comment to a ticket
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string }, public: { type: boolean, description: false makes it an internal note } } }
+      responses: { "200": { description: Added } }
+  /escalations:
+    post:
+      operationId: escalateTicket
+      summary: Escalate a ticket to the on-call lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [ticket_id], properties: { ticket_id: { type: string }, reason: { type: string } } }
+      responses: { "200": { description: Escalated } }
+components:
+  schemas:
+    Ticket:
+      type: object
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        assignee: { type: string, nullable: true }
+        customer_email: { type: string }
+        hours_open: { type: number }

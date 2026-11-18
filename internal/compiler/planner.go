@@ -65,7 +65,16 @@ func Compile(ctx context.Context, cat *Catalog, prompt, name string) (Plan, erro
 		return Plan{}, err
 	}
 	p := basePlan(prompt, "")
-	compiled, err := compileGraphLLM(ctx, cat, prompt, &p)
+	var (
+		compiled []GraphNode
+		err      error
+	)
+	if base, ok := baseOf(ctx); ok {
+		p.Name, p.Description, p.Schedule = base.Name, base.Description, base.Schedule
+		compiled, err = refineGraph(ctx, cat, base, prompt, &p)
+	} else {
+		compiled, err = compileGraphLLM(ctx, cat, prompt, &p)
+	}
 	if err != nil {
 		return Plan{}, err
 	}
@@ -352,7 +361,7 @@ func authorGraph(ctx context.Context, cat *Catalog, system, prompt string, p *Pl
 // then validates and repairs it.
 func authorGraphSingle(ctx context.Context, cat *Catalog, system, prompt string, p *Plan) ([]GraphNode, error) {
 	msgs := []llmMsg{{Role: "user", Content: prompt}}
-	const attempts = 3 // 1 author + 2 repairs
+	attempts := authorAttempts()
 	var lastComplaint string
 	for i := 0; i < attempts; i++ {
 		raw, err := reduceLLM(ctx, reduceModel(), reduceMaxTokens(), reduceTimeout(), system, msgs)
@@ -398,6 +407,20 @@ func authorGraphSingle(ctx context.Context, cat *Catalog, system, prompt string,
 		reduceModel(), attempts, lastComplaint)
 }
 
+// authorAttempts is one authoring call plus the repair rounds. Each round costs
+// a model call only when the graph before it failed validation.
+// PLANNER_REPAIR_ROUNDS changes it; smaller models need more.
+func authorAttempts() int {
+	rounds := envInt("PLANNER_REPAIR_ROUNDS", 3)
+	if rounds < 0 {
+		rounds = 0
+	}
+	if rounds > 8 {
+		rounds = 8
+	}
+	return 1 + rounds
+}
+
 // graphProblems runs the structural checks, then — only once the structure
 // holds — the reference checks: reference checks on a broken graph would bury
 // the real problem under follow-on noise.
@@ -405,7 +428,33 @@ func graphProblems(nodes []GraphNode, cat *Catalog, inputKeys map[string]bool) [
 	if errs := validateGraph(nodes, cat); len(errs) > 0 {
 		return errs
 	}
-	return validateRefs(nodes, cat, inputKeys)
+	if errs := validateRefs(nodes, cat, inputKeys); len(errs) > 0 {
+		return errs
+	}
+	return policyProblems(nodes, cat)
+}
+
+// policyProblems applies the operator's approval rule. It is a problem like any
+// other, so a compile repairs it by putting an approval in front of the step.
+func policyProblems(nodes []GraphNode, cat *Catalog) []string {
+	if cat.RequireApproval != ApproveDeletes && cat.RequireApproval != ApproveChanges {
+		return nil
+	}
+	var errs []string
+	for _, st := range ReviewGraph(nodes, cat).Steps {
+		if st.AfterApproval || !changes(st.Kind) || (cat.RequireApproval == ApproveDeletes && st.Kind != "delete") {
+			continue
+		}
+		what := "changes data"
+		if st.Kind == "delete" {
+			what = "deletes data"
+		} else if st.Kind == "action" {
+			what = "may change data"
+		}
+		errs = append(errs, "node '"+st.Node+"' "+what+", and this engine requires a person to approve that first:"+
+			" add a logic.approval node whose message says what is about to happen, and make '"+st.Node+"' depend on it")
+	}
+	return errs
 }
 
 // reduceSystemPrompt assembles the node contract: graph rules + full schemas for
@@ -442,20 +491,56 @@ DATA FLOW (exactness matters — an unknown reference FAILS the run):
   email into defaultInput and reference them this way) and {{outputs.<key>.<field>}}
   where <key> is an upstream node's key and <field> is one of ITS listed outputs.
   Only reference fields listed in the upstream node's "outputs". Imported API nodes
-  (api.*) expose "status" and the parsed JSON "body"; imported MCP nodes (mcp.*) expose
-  "result". Reach inside body/result only when the node's description documents the
+  (api.*) expose "status" and the parsed JSON "body"; imported MCP nodes (mcp.*) and
+  Activepieces actions (piece.*) expose "result". Reach inside body/result only when the node's description documents the
   shape, e.g. {{outputs.get_user.body.email}}.
-- logic.branch / logic.filter conditions: "<lhs> <op> <rhs>" with == != > < >= <=,
-  each side a dotted ref (outputs.fetch.status) or literal — e.g. "outputs.fetch.status == 200".
+- A node sees only the outputs of the nodes in its own dependsOn. Gates (logic.branch,
+  logic.filter, logic.approval) decide whether later nodes run; they do not pass data
+  through, and their outputs are only their own listed plain values. To use earlier data
+  after a gate, list the node that produced it in dependsOn too, e.g. "dependsOn":
+  ["gate", "fetch"] with {{outputs.fetch.body}}.
+- logic.branch / logic.filter conditions: "<lhs> <op> <rhs>" with == != > < >= <= contains,
+  each side a dotted ref (outputs.fetch.status) or literal. Join several with && and ||,
+  negate with !, group with parentheses — e.g.
+  "outputs.fetch.status == 200 && outputs.fetch.body.total > 100".
 - logic.loop runs the nodes that depend on it once per item: config.items is a dotted ref
   to a list (e.g. outputs.fetch.items); inside the body use {{item}} for the current
-  element. A node that references outputs.<loop_key>.results is NOT in the body: it runs
+  element and {{item.field}} for one of its fields, including after a gate. A node that references outputs.<loop_key>.results is NOT in the body: it runs
   once, after every item has finished, so use that for summaries of the whole loop.
+  A loop cannot contain another loop. Set "onError": "continue" when one bad item should
+  not stop the rest (bulk work over many records); the default stops at the first failure.
+- data.transform reshapes data exactly, with jq. Its expression is jq, NOT a template: read
+  upstream data as .outputs.<dependency key>.<field>, run input as .input.<field>, and the
+  loop item as .item. Example: "[.outputs.list_orders.body[] | select(.status == \"late\")]".
+  Inside ".[] |" or "map(...)" the dot is the element, so bind outside values first:
+  ".input.min as $min | [.outputs.x.body[] | select(.total > $min)]".
+  Its output is "result". Prefer it over agent.llm for filtering, sorting, counting, totals,
+  picking fields and joining lists: it is exact, instant and free.
+- List operations that support paging have an "allPages" field. Set it to "true" when the
+  request means every record ("all", "every", "each"), then read the whole list as
+  {{outputs.<key>.items}}. Without it only the first page is fetched.
+- logic.wait pauses the run (seconds, or until a time) and then continues.
+
+HOW TO BUILD THE COMMON SHAPES:
+- "Do X to every record that matches a rule": list the records (allPages "true"), narrow the
+  list with data.transform, loop over the result, act inside the loop.
+    list:   api...list      config {"allPages": "true"}
+    keep:   data.transform  dependsOn [list]  expression "[.outputs.list.items[] | select(.total > 100)]"
+    each:   logic.loop      dependsOn [keep]  items "outputs.keep.result"
+    act:    api...update    dependsOn [each]  config {"id": "{{item.id}}"}
+  Never use logic.filter or logic.branch to narrow a list: a gate tests ONE value and
+  outputs only true or false. Never loop over a gate.
+- "Ask me before each one": put logic.approval inside the loop (dependsOn [each]), and make
+  the action depend on the approval. The action still reads {{item.id}}.
+- "Do X to this one thing" (an id given in the request): no list and no loop; put the id
+  straight into the config, e.g. {"id": "o5"}.
+- {{item}} exists only in nodes that depend on a logic.loop. Every reference in a config
+  value needs its {{ }}; a bare "outputs.x.y" is sent as that literal text.
 
 DESIGN GUIDANCE:
-- agent.llm is the workhorse for reasoning, extraction, summarizing and reformatting.
-  Give it a crisp system prompt and
-  reference upstream outputs explicitly in its prompt.
+- agent.llm is for judgement and language: deciding from a written policy, summarizing,
+  drafting, classifying free text. Give it a crisp system prompt and reference upstream
+  outputs explicitly in its prompt. For mechanical data work use data.transform instead.
 - tool.http can call ANY public API you know of (exact documented URLs only) — the
   imported nodes below are preferred whenever they cover the capability, because
   they carry the operator's credentials and tool.http does not.

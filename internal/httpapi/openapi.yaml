@@ -1,0 +1,1035 @@
+openapi: 3.0.3
+info:
+  title: apex-engine
+  version: "1"
+  description: >
+    Compile plain English into a validated graph over your own tools, then run it
+    durably. Every /v1 route needs a bearer API key. A key belongs to one tenant
+    and has one role: viewer (read), approver (read, decide approvals), editor
+    (read, build and run), operator (editor plus approvals) or admin (everything,
+    including tools, keys and the audit log). A key whose role is too low gets 403.
+
+
+    A product with its own customers uses the platform key instead
+    (APEX_PLATFORM_KEY). It acts for any tenant: every request names the tenant
+    in X-Apex-Tenant, and may name the end user in X-Apex-Actor and their role
+    in X-Apex-Role (admin when left out). A tenant needs no setup; the first
+    request that names it creates it. The actor is recorded as who started a
+    run and who decided an approval. Keep the platform key on your server.
+servers:
+  - url: http://localhost:8700
+security:
+  - apiKey: []
+tags:
+  - name: compile
+  - name: runs
+  - name: workflows
+  - name: tools
+  - name: schedules
+  - name: access
+paths:
+  /healthz:
+    get:
+      summary: Liveness check
+      security: []
+      responses: { "200": { description: The engine is up } }
+  /openapi.yaml:
+    get:
+      summary: This document
+      security: []
+      responses: { "200": { description: The OpenAPI document } }
+  /oauth/callback:
+    get:
+      tags: [tools]
+      summary: Where an OAuth provider sends a person after consent
+      description: >
+        Not called by API clients. The state value issued by
+        POST /v1/catalogs/{id}/oauth/authorize is the credential, and works once.
+        Answers with a small HTML page.
+      security: []
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Connected, content: { text/html: { schema: { type: string } } } }
+        "400": { description: The link expired, was used, or access was refused, content: { text/html: { schema: { type: string } } } }
+        "502": { description: The provider refused the code, content: { text/html: { schema: { type: string } } } }
+  /metrics:
+    get:
+      summary: Prometheus metrics for every tenant
+      description: Needs the APEX_METRICS_TOKEN value as the bearer token, not an API key. 404 when that setting is empty.
+      security: [{ metricsToken: [] }]
+      responses:
+        "200": { description: Prometheus text format, content: { text/plain: { schema: { type: string } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /hooks/{token}:
+    post:
+      tags: [workflows]
+      summary: Start a workflow from another system
+      description: The URL is the credential. The JSON object body becomes the run input.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, schema: { type: string } }
+      requestBody:
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses:
+        "202":
+          description: A run started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, status]
+                properties: { runId: { type: string }, status: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/status:
+    get:
+      operationId: getStatus
+      summary: Whether the engine can compile, and on which models
+      responses:
+        "200":
+          description: Status
+          content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } }
+  /v1/callback-secret:
+    get:
+      operationId: getCallbackSecret
+      tags: [runs]
+      summary: The hex key that signs this tenant's run events
+      responses:
+        "200":
+          description: The key
+          content:
+            application/json:
+              schema: { type: object, required: [secret], properties: { secret: { type: string } } }
+  /v1/demo:
+    post:
+      operationId: installDemo
+      summary: Install the sample tools and workflow
+      responses:
+        "200": { description: Already installed }
+        "201": { description: Installed }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/compile:
+    post:
+      operationId: compile
+      tags: [compile]
+      summary: Turn a prompt into a validated plan
+      requestBody: { $ref: "#/components/requestBodies/Compile" }
+      responses:
+        "200":
+          description: A plan that passed validation
+          content: { application/json: { schema: { $ref: "#/components/schemas/CompileResult" } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/compile/stream:
+    post:
+      operationId: compileStream
+      tags: [compile]
+      summary: Compile with progress, as server-sent events
+      description: "Events: stage (a Stage), result (a CompileResult), error ({message})."
+      requestBody: { $ref: "#/components/requestBodies/Compile" }
+      responses:
+        "200":
+          description: An event stream
+          content: { text/event-stream: { schema: { type: string } } }
+  /v1/validate:
+    post:
+      operationId: validate
+      tags: [compile]
+      summary: Check a graph without running it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dag]
+              properties:
+                dag: { $ref: "#/components/schemas/Dag" }
+                catalogIds: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The verdict, and for a valid graph what it does in plain words
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid, problems]
+                properties:
+                  valid: { type: boolean }
+                  problems: { type: array, items: { type: string } }
+                  review: { $ref: "#/components/schemas/Review" }
+  /v1/runs:
+    get:
+      operationId: listRuns
+      tags: [runs]
+      summary: Recent runs, without their steps
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: workflowId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties: { runs: { type: array, items: { $ref: "#/components/schemas/Run" } } }
+    post:
+      operationId: startRun
+      tags: [runs]
+      summary: Validate a graph and start it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dag]
+              properties:
+                dag: { $ref: "#/components/schemas/Dag" }
+                catalogIds: { type: array, items: { type: string } }
+                input: { type: object, additionalProperties: true }
+                idempotencyKey: { type: string }
+                name: { type: string }
+                callbackUrl: { type: string, description: Receives this run's signed events }
+                preview:
+                  type: boolean
+                  description: >
+                    Do every read for real and send no write. Each write, approval
+                    and wait is recorded instead of done; read them from
+                    /v1/runs/{id}/preview. Nobody is asked to approve anything.
+      responses:
+        "200":
+          description: The earlier run with this idempotency key
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202":
+          description: Started
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429":
+          description: The tenant already has as many unfinished runs as the engine allows (code too_many_runs)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  /v1/runs/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getRun
+      tags: [runs]
+      summary: A run with its steps and graph
+      responses:
+        "200":
+          description: The run
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/runs/{id}/preview:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getRunPreview
+      tags: [runs]
+      summary: What a preview run would have done
+      description: >
+        Every write the run did not send, every question it would have asked a
+        person and every wait it skipped, in graph order and then item order.
+        Read it once the run is done; before that the list is still growing.
+      responses:
+        "200":
+          description: The planned actions
+          content: { application/json: { schema: { $ref: "#/components/schemas/Preview" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The run was not a preview
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  /v1/runs/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: cancelRun
+      tags: [runs]
+      summary: Stop a run
+      responses:
+        "200":
+          description: The run
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+  /v1/runs/{id}/retry:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: retryRun
+      tags: [runs]
+      summary: Continue a failed or cancelled run as a new run
+      description: >
+        Steps and loop items that succeeded are not executed again; their results
+        are carried over and marked reused. Calls that were in flight keep the
+        Idempotency-Key they had the first time. Asking twice returns the same new
+        run. Needs editor.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { callbackUrl: { type: string } }
+      responses:
+        "200":
+          description: The run that an earlier retry already started
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202":
+          description: The new run
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/runs/{id}/nodes/{key}/items:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: key, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: listItems
+      tags: [runs]
+      summary: The loop items of one step
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [running, waiting_approval, succeeded, failed, skipped] } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Items in order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties: { items: { type: array, items: { $ref: "#/components/schemas/ItemRun" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/runs/{id}/nodes/{key}/approve:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: key, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: decideApproval
+      tags: [runs]
+      summary: Approve or reject a step that is waiting
+      description: >
+        Needs approver. The decision is recorded with the key's name. Sending it
+        twice is safe: the second copy answers a wait that is already over.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties: { approved: { type: boolean }, note: { type: string } }
+      responses:
+        "200":
+          description: The run
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/workflows:
+    get:
+      operationId: listWorkflows
+      tags: [workflows]
+      summary: Saved graphs
+      responses:
+        "200":
+          description: Workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workflows]
+                properties: { workflows: { type: array, items: { $ref: "#/components/schemas/Workflow" } } }
+    post:
+      operationId: createWorkflow
+      tags: [workflows]
+      summary: Save a graph that passes validation
+      requestBody: { $ref: "#/components/requestBodies/Workflow" }
+      responses:
+        "201":
+          description: Saved
+          content: { application/json: { schema: { $ref: "#/components/schemas/Workflow" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/workflows/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getWorkflow
+      tags: [workflows]
+      summary: A saved graph and its schedules
+      responses:
+        "200":
+          description: The workflow
+          content: { application/json: { schema: { $ref: "#/components/schemas/Workflow" } } }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateWorkflow
+      tags: [workflows]
+      summary: Replace a saved graph
+      requestBody: { $ref: "#/components/requestBodies/Workflow" }
+      responses:
+        "200":
+          description: Saved
+          content: { application/json: { schema: { $ref: "#/components/schemas/Workflow" } } }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteWorkflow
+      tags: [workflows]
+      summary: Remove a saved graph and its schedules
+      responses: { "204": { description: Removed } }
+  /v1/workflows/{id}/runs:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: runWorkflow
+      tags: [workflows]
+      summary: Start a saved graph
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { type: object, additionalProperties: true }
+                idempotencyKey: { type: string }
+                callbackUrl: { type: string }
+                preview: { type: boolean, description: "Do the reads, send no write; see POST /v1/runs" }
+      responses:
+        "202":
+          description: Started
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/workflows/{id}/webhook:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    put:
+      operationId: enableWebhook
+      tags: [workflows]
+      summary: Turn the inbound webhook on, or replace its URL
+      responses:
+        "200":
+          description: The path to POST to
+          content:
+            application/json:
+              schema: { type: object, required: [webhookPath], properties: { webhookPath: { type: string } } }
+    delete:
+      operationId: disableWebhook
+      tags: [workflows]
+      summary: Turn the inbound webhook off
+      responses: { "204": { description: Off } }
+  /v1/catalogs:
+    get:
+      operationId: listCatalogs
+      tags: [tools]
+      summary: Tool sources, without their tools
+      responses:
+        "200":
+          description: Catalogs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [catalogs]
+                properties: { catalogs: { type: array, items: { $ref: "#/components/schemas/Catalog" } } }
+    post:
+      operationId: createCatalog
+      tags: [tools]
+      summary: Import an OpenAPI spec, an MCP server or an Activepieces piece
+      description: Needs admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, source]
+              properties:
+                name: { type: string }
+                baseUrl: { type: string }
+                source:
+                  type: object
+                  required: [type]
+                  properties:
+                    type: { type: string, enum: [openapi, mcp, piece] }
+                    url: { type: string }
+                    spec: { description: An OpenAPI document, as an object or a YAML string }
+                    headers: { type: object, additionalProperties: { type: string } }
+                    piece: { type: string, description: "For type piece: a name from GET /v1/pieces, such as slack" }
+                    auth: { description: "For type piece: the connection value the piece expects. Write-only." }
+      responses:
+        "201":
+          description: Imported
+          content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/pieces:
+    get:
+      operationId: listPieces
+      tags: [tools]
+      summary: Activepieces pieces this engine can add as tools
+      parameters:
+        - { name: q, in: query, description: Filter by name, schema: { type: string } }
+      responses:
+        "200":
+          description: Pieces, without their actions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pieces]
+                properties: { pieces: { type: array, items: { $ref: "#/components/schemas/Piece" } } }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/catalogs/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getCatalog
+      tags: [tools]
+      summary: A tool source with its tools
+      responses:
+        "200":
+          description: The catalog
+          content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } }
+    delete:
+      operationId: deleteCatalog
+      tags: [tools]
+      summary: Remove a tool source
+      responses: { "204": { description: Removed } }
+  /v1/catalogs/{id}/credentials:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    put:
+      operationId: setCredentials
+      tags: [tools]
+      summary: Replace how the engine authenticates to a tool source. Write-only.
+      description: >
+        Everything not sent is cleared. OAuth settings are tried before they are
+        saved, so wrong ones are refused here with oauth_failed. For a provider
+        that needs a person to consent, use the authorize route instead. Needs admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                headers: { type: object, additionalProperties: { type: string } }
+                query: { type: object, additionalProperties: { type: string }, description: Query parameters added to every request }
+                oauth:
+                  allOf: [{ $ref: "#/components/schemas/OAuthClient" }]
+                  description: grant must be client_credentials or refresh_token
+                piece: { description: The connection value an Activepieces piece expects }
+      responses:
+        "200":
+          description: The catalog, without its tools
+          content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /v1/catalogs/{id}/oauth/authorize:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: startOAuth
+      tags: [tools]
+      summary: Start an OAuth consent for a tool source
+      description: >
+        Returns the address a person opens to grant access. Register redirectUrl
+        with the provider first. The provider sends the person to /oauth/callback,
+        which stores the tokens; the engine refreshes them from then on. Uses
+        PKCE. Needs admin.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OAuthClient" } } }
+      responses:
+        "200":
+          description: Where to send the person
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorizeUrl, redirectUrl]
+                properties:
+                  authorizeUrl: { type: string }
+                  redirectUrl: { type: string }
+                  expiresInSeconds: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/keys:
+    get:
+      operationId: listKeys
+      tags: [access]
+      summary: API keys of this tenant. Needs admin.
+      responses:
+        "200":
+          description: Keys, without their secrets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties: { keys: { type: array, items: { $ref: "#/components/schemas/ApiKey" } } }
+    post:
+      operationId: createKey
+      tags: [access]
+      summary: Make a key for a person or a system. Needs admin.
+      description: The key is in this response and nowhere else. Only its hash is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string, description: Shown as the actor in the audit log and on approvals }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "201":
+          description: The key, once
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ApiKey" }
+                  - { type: object, required: [key], properties: { key: { type: string } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/keys/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      operationId: revokeKey
+      tags: [access]
+      summary: Stop a key working. Needs admin.
+      responses:
+        "200":
+          description: The revoked key
+          content: { application/json: { schema: { $ref: "#/components/schemas/ApiKey" } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/audit:
+    get:
+      operationId: listAudit
+      tags: [access]
+      summary: Who did what, newest first. Needs admin.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: before, in: query, description: Page back from this entry id, schema: { type: integer, format: int64 } }
+        - { name: action, in: query, description: 'Prefix match, so "run." selects every run action', schema: { type: string } }
+        - { name: actor, in: query, schema: { type: string } }
+        - { name: target, in: query, description: The id acted on, schema: { type: string } }
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties: { entries: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } }
+  /v1/tenant:
+    delete:
+      operationId: deleteTenant
+      tags: [access]
+      summary: Delete everything the tenant has. Needs admin.
+      description: >
+        For offboarding a customer. Unfinished runs are stopped and schedules
+        removed, then every tool (with its credentials), workflow, run, schedule,
+        key, counter and audit entry of the calling tenant is deleted. It cannot
+        be undone. The tenant's name must be repeated in confirm.
+      parameters:
+        - { name: confirm, in: query, required: true, description: The tenant's own name, schema: { type: string } }
+      responses:
+        "200":
+          description: What was deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant: { type: string }
+                  runsStopped: { type: integer }
+                  deleted: { type: object, additionalProperties: { type: integer, format: int64 }, description: Rows deleted per table }
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/schedules:
+    get:
+      operationId: listSchedules
+      tags: [schedules]
+      summary: Recurring runs
+      responses:
+        "200":
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schedules]
+                properties: { schedules: { type: array, items: { $ref: "#/components/schemas/Schedule" } } }
+    post:
+      operationId: createSchedule
+      tags: [schedules]
+      summary: Run a saved workflow, or a fixed graph, on a UTC cron schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cron]
+              properties:
+                cron: { type: string, example: "0 9 * * 1" }
+                workflowId: { type: string }
+                dag: { $ref: "#/components/schemas/Dag" }
+                catalogIds: { type: array, items: { type: string } }
+                input: { type: object, additionalProperties: true }
+                callbackUrl: { type: string }
+      responses:
+        "201":
+          description: Created
+          content: { application/json: { schema: { $ref: "#/components/schemas/Schedule" } } }
+  /v1/schedules/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      operationId: deleteSchedule
+      tags: [schedules]
+      summary: Stop a schedule
+      responses: { "204": { description: Stopped } }
+components:
+  securitySchemes:
+    apiKey: { type: http, scheme: bearer }
+    metricsToken: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    Tenant:
+      name: X-Apex-Tenant
+      in: header
+      description: "With the platform key only. The tenant to act for: 1 to 64 letters, digits, dots, underscores, colons or hyphens."
+      schema: { type: string }
+    Actor:
+      name: X-Apex-Actor
+      in: header
+      description: With the platform key only. The end user, recorded against what the request does.
+      schema: { type: string, maxLength: 120 }
+    ActorRole:
+      name: X-Apex-Role
+      in: header
+      description: With the platform key only. The end user's role; admin when left out.
+      schema: { $ref: "#/components/schemas/Role" }
+  requestBodies:
+    Compile:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [prompt]
+            properties:
+              prompt: { type: string }
+              catalogIds: { type: array, items: { type: string } }
+              name: { type: string }
+              base:
+                description: >
+                  An existing plan. When set, the prompt is a change to it ("also
+                  post it to Slack"): everything the prompt does not mention is
+                  kept, and the result carries a diff.
+                allOf: [{ $ref: "#/components/schemas/Plan" }]
+    Workflow:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, nodes]
+            properties:
+              name: { type: string }
+              description: { type: string }
+              prompt: { type: string }
+              nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+              defaultInput: { type: object, additionalProperties: true }
+              catalogIds: { type: array, items: { type: string } }
+              callbackUrl: { type: string }
+  responses:
+    Error:
+      description: The request failed
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            problems: { type: array, items: { type: string } }
+    Status:
+      type: object
+      properties:
+        demoAvailable: { type: boolean }
+        piecesAvailable: { type: boolean }
+        actor: { type: string, description: The name of the key making the request }
+        role: { $ref: "#/components/schemas/Role" }
+        models:
+          type: object
+          properties:
+            ready: { type: boolean }
+            problem: { type: string }
+            map: { type: string }
+            reduce: { type: string }
+            agent: { type: string }
+    Node:
+      type: object
+      required: [key, type, dependsOn, config]
+      properties:
+        key: { type: string }
+        type: { type: string, description: "A built-in type, api.<catalog>.<operation>, mcp.<catalog>.<tool> or piece.<catalog>.<action>" }
+        name: { type: string }
+        dependsOn: { type: array, items: { type: string } }
+        config: { type: object, additionalProperties: true }
+    Dag:
+      type: object
+      required: [nodes]
+      properties:
+        nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+        defaultInput: { type: object, additionalProperties: true }
+    Plan:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+        defaultInput: { type: object, additionalProperties: true }
+        schedule: { type: string, nullable: true }
+    Stage:
+      type: object
+      properties:
+        stage: { type: string }
+        status: { type: string }
+        detail: { type: string }
+        durationMs: { type: integer, format: int64 }
+    ReviewStep:
+      type: object
+      properties:
+        node: { type: string }
+        kind:
+          type: string
+          enum: [start, read, write, delete, action, model, approval, loop, gate, wait, transform]
+          description: write, delete and action can change something outside the engine
+        text: { type: string, description: The step in plain words }
+        detail: { type: string, description: "The exact rule behind the words: a transform's expression, a model step's prompt" }
+        tool: { type: string }
+        perItem: { type: boolean, description: Runs once for each item of a loop }
+        afterApproval: { type: boolean, description: A person is asked before it can run }
+    Review:
+      type: object
+      description: What a graph does, for the person who has to agree to it. No model writes this.
+      properties:
+        steps: { type: array, items: { $ref: "#/components/schemas/ReviewStep" } }
+        reads: { type: integer }
+        changes: { type: integer }
+        approvals: { type: integer }
+        warnings: { type: array, items: { type: string }, description: Steps that change something with no approval in front of them }
+    Diff:
+      type: object
+      description: What a change did to a plan, by step key
+      properties:
+        added: { type: array, items: { type: string } }
+        removed: { type: array, items: { type: string } }
+        changed: { type: array, items: { type: string } }
+        unchanged: { type: integer }
+    PlannedAction:
+      type: object
+      properties:
+        node: { type: string }
+        name: { type: string }
+        type: { type: string }
+        item: { type: integer, nullable: true, description: The loop item, or null outside a loop }
+        kind:
+          type: string
+          enum: [call, approval, wait, unknown]
+          description: >
+            call is a write that was not sent; approval a question that was not
+            asked (the preview carried on as if the answer were yes); wait a pause
+            that was skipped; unknown a step that needs the result of a write the
+            preview did not send.
+        detail:
+          type: object
+          additionalProperties: true
+          description: tool, operation, method, url and body for a call; message for an approval; seconds for a wait; reason for unknown
+    Preview:
+      type: object
+      properties:
+        runId: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        error: { type: string, nullable: true }
+        done: { type: boolean }
+        actions: { type: array, items: { $ref: "#/components/schemas/PlannedAction" } }
+        counts: { type: object, additionalProperties: { type: integer } }
+        truncated: { type: boolean, description: More than 2000 actions; the list was cut }
+    CompileResult:
+      type: object
+      required: [plan, trace]
+      properties:
+        plan: { $ref: "#/components/schemas/Plan" }
+        review: { $ref: "#/components/schemas/Review" }
+        diff: { $ref: "#/components/schemas/Diff" }
+        trace:
+          type: object
+          properties:
+            durationMs: { type: integer, format: int64 }
+            stages: { type: array, items: { $ref: "#/components/schemas/Stage" } }
+            repairs: { type: integer }
+            models: { type: object, additionalProperties: { type: string } }
+    RunStatus:
+      type: string
+      enum: [queued, running, waiting_approval, succeeded, failed, cancelled]
+    NodeRun:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [pending, running, waiting_approval, succeeded, failed, skipped] }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        output: { nullable: true }
+        error: { type: string, nullable: true }
+        attempts: { type: integer }
+        reused: { type: boolean, description: The result was carried over from the run this one resumes }
+        itemsSucceeded: { type: integer, description: Loop items of this step that succeeded }
+        itemsFailed: { type: integer }
+    ItemRun:
+      type: object
+      description: One loop item of one step
+      properties:
+        index: { type: integer }
+        status: { type: string, enum: [running, waiting_approval, succeeded, failed, skipped] }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        output: { nullable: true }
+        error: { type: string, nullable: true }
+        attempts: { type: integer }
+    Run:
+      type: object
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        name: { type: string }
+        workflowId: { type: string, nullable: true }
+        source: { type: string, enum: [api, webhook, schedule, retry] }
+        startedBy: { type: string, description: 'A key name, the X-Apex-Actor of a platform key, "webhook" or "schedule"' }
+        resumeOf: { type: string, nullable: true, description: The failed run this one continues }
+        failedItems: { type: integer, description: Loop items that failed in a loop set to continue }
+        preview: { type: boolean, description: The run made its reads and only recorded its writes }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+        input: { type: object, additionalProperties: true }
+        catalogIds: { type: array, items: { type: string } }
+        nodes: { type: array, items: { $ref: "#/components/schemas/NodeRun" } }
+        dag: { type: array, items: { $ref: "#/components/schemas/Node" } }
+    Workflow:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        prompt: { type: string }
+        nodes: { type: array, items: { $ref: "#/components/schemas/Node" } }
+        defaultInput: { type: object, additionalProperties: true }
+        catalogIds: { type: array, items: { type: string } }
+        callbackUrl: { type: string }
+        webhookPath: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        schedules: { type: array, items: { $ref: "#/components/schemas/Schedule" } }
+    Catalog:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [openapi, mcp, piece] }
+        baseUrl: { type: string }
+        nodeCount: { type: integer }
+        hasCredentials: { type: boolean }
+        auth: { type: string, enum: [none, headers, oauth2, oauth2_pending, piece] }
+        credentialHeaders: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        nodes: { type: array, items: { type: object, additionalProperties: true } }
+    Role:
+      type: string
+      enum: [viewer, approver, editor, operator, admin]
+    ApiKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        prefix: { type: string, description: The first characters of the key, to tell keys apart }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        at: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string, description: 'For example run.start, run.approve, catalog.credentials, key.create' }
+        target: { type: string }
+        detail: { type: object, additionalProperties: true }
+    OAuthClient:
+      type: object
+      required: [tokenUrl, clientId]
+      properties:
+        grant: { type: string, enum: [client_credentials, refresh_token] }
+        tokenUrl: { type: string }
+        authUrl: { type: string, description: The consent page. Only for the authorize route. }
+        clientId: { type: string }
+        clientSecret: { type: string }
+        scope: { type: string }
+        audience: { type: string }
+        refreshToken: { type: string }
+        clientAuth: { type: string, enum: [body, basic], description: Where the client id and secret go. The other is tried if the first is refused. }
+        authParams: { type: object, additionalProperties: { type: string }, description: 'Extra consent parameters, such as access_type=offline' }
+    Piece:
+      type: object
+      properties:
+        name: { type: string }
+        displayName: { type: string }
+        description: { type: string }
+        version: { type: string }
+        categories: { type: array, items: { type: string } }
+        actionCount: { type: integer }
+        auth:
+          type: object
+          properties:
+            type: { type: string, enum: [NONE, SECRET_TEXT, CUSTOM_AUTH, BASIC_AUTH, OAUTH2] }
+            description: { type: string }
+            authUrl: { type: string }
+            tokenUrl: { type: string }
+            scope: { type: array, items: { type: string } }
+            props: { type: array, items: { type: object, additionalProperties: true } }
+    Schedule:
+      type: object
+      properties:
+        id: { type: string }
+        cron: { type: string }
+        createdAt: { type: string, format: date-time }
+        paused: { type: boolean }
+        workflowId: { type: string, nullable: true }
+    Event:
+      type: object
+      description: >
+        Posted to a callbackUrl, with headers X-Apex-Event, X-Apex-Delivery (the same
+        on every retry) and X-Apex-Signature (sha256=<hex HMAC-SHA256 of the body>).
+      properties:
+        event: { type: string, enum: [run.waiting_approval, run.finished] }
+        runId: { type: string }
+        status: { type: string }
+        error: { type: string }
+        node: { type: string }
+        message: { type: string }
+        delivery: { type: string }
+        at: { type: string, format: date-time }

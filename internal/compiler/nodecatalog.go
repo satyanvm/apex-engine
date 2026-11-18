@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/itchyny/gojq"
 )
 
 // CatalogField mirrors one config entry of a node definition (also the shape the
@@ -77,7 +79,17 @@ type catalogFile struct {
 type Catalog struct {
 	Clusters map[string]catalogFile // cluster key → file (nodes carry Cluster)
 	ByID     map[string]CatalogNode
+	// RequireApproval is the operator's rule for steps that change something:
+	// "deletes" refuses a graph that deletes with no approval in front of it,
+	// "changes" refuses one that changes anything that way. Empty allows both.
+	RequireApproval string
 }
+
+// Approval policies.
+const (
+	ApproveDeletes = "deletes"
+	ApproveChanges = "changes"
+)
 
 //go:embed builtin.json
 var builtinJSON []byte
@@ -224,8 +236,146 @@ func validateGraph(nodes []GraphNode, cat *Catalog) []string {
 	}
 	if cycle := findCycle(nodes); cycle != "" {
 		errs = append(errs, "cycle detected among nodes: "+cycle)
+		return errs
+	}
+	if len(errs) == 0 {
+		errs = append(errs, validateSemantics(nodes)...)
 	}
 	return errs
+}
+
+// ConditionChecker parses a gate condition without evaluating it. The runtime
+// owns the condition grammar and registers its parser here, so the compiler
+// rejects a condition the runtime could not read.
+var ConditionChecker func(string) error
+
+// validateSemantics checks the rules that are about what a node means rather
+// than how the graph is wired: loops, gate conditions, transforms and waits.
+func validateSemantics(nodes []GraphNode) []string {
+	var errs []string
+	byKey := map[string]GraphNode{}
+	for _, n := range nodes {
+		byKey[n.Key] = n
+	}
+	for _, n := range nodes {
+		switch n.Type {
+		case "logic.loop":
+			for _, k := range LoopBody(nodes, n.Key) {
+				if byKey[k].Type == "logic.loop" {
+					errs = append(errs, "loop '"+k+"' is inside loop '"+n.Key+"': nested loops are not supported. Flatten the two lists into one with a data.transform step, then loop once")
+				}
+			}
+			if v, ok := n.Config["onError"]; ok && v != nil {
+				s := strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+				if s != "" && s != "stop" && s != "continue" {
+					errs = append(errs, "node '"+n.Key+"': onError must be \"stop\" or \"continue\"")
+				}
+			}
+		case "logic.branch", "logic.filter":
+			if cond, ok := n.Config["condition"].(string); ok && ConditionChecker != nil {
+				if err := ConditionChecker(cond); err != nil {
+					hint := ". Write a comparison (== != > < >= <= contains), or several joined with && and ||"
+					if strings.Contains(strings.ReplaceAll(cond, "||", ""), "|") {
+						hint += ". A condition is not jq and has no pipes: a non-empty list is already true, so test the reference on its own," +
+							" or work the value out in a data.transform step first"
+					}
+					errs = append(errs, "node '"+n.Key+"': "+err.Error()+hint)
+				}
+			}
+		case "data.transform":
+			expr, _ := n.Config["expression"].(string)
+			if _, err := gojq.Parse(expr); err != nil {
+				errs = append(errs, "node '"+n.Key+"': expression is not valid jq ("+err.Error()+")")
+			} else if tplRef.MatchString(expr) {
+				errs = append(errs, "node '"+n.Key+"': a jq expression does not use {{...}}; read data as .outputs.<dependency key>.<field> or .input.<field>")
+			} else {
+				if msg := jqUnavailable(expr); msg != "" {
+					errs = append(errs, "node '"+n.Key+"': "+msg)
+				}
+				for _, p := range jqRootProblems(expr) {
+					errs = append(errs, "node '"+n.Key+"': "+p)
+				}
+			}
+		case "logic.wait":
+			secs, until := strings.TrimSpace(fmt.Sprint(orEmpty(n.Config["seconds"]))), strings.TrimSpace(fmt.Sprint(orEmpty(n.Config["until"])))
+			if secs == "" && until == "" {
+				errs = append(errs, "node '"+n.Key+"' (logic.wait) needs seconds or until")
+			}
+		}
+	}
+	return errs
+}
+
+func orEmpty(v any) any {
+	if v == nil {
+		return ""
+	}
+	return v
+}
+
+// LoopBody returns the keys of the nodes that run once per item of the loop:
+// every node all of whose dependencies are the loop or other body nodes, except
+// one that reads the loop's collected results. The runtime applies the same rule.
+func LoopBody(nodes []GraphNode, loop string) []string {
+	body := map[string]bool{}
+	var out []string
+	for _, n := range topoOrder(nodes) {
+		if n.Key == loop || len(n.DependsOn) == 0 {
+			continue
+		}
+		if raw, err := json.Marshal(n.Config); err == nil && strings.Contains(string(raw), "outputs."+loop+".results") {
+			continue
+		}
+		inside := true
+		for _, d := range n.DependsOn {
+			if d != loop && !body[d] {
+				inside = false
+				break
+			}
+		}
+		if inside {
+			body[n.Key] = true
+			out = append(out, n.Key)
+		}
+	}
+	return out
+}
+
+// topoOrder returns the nodes dependencies first, ties broken by the given
+// order. It assumes the graph has no cycle.
+func topoOrder(nodes []GraphNode) []GraphNode {
+	indeg := map[string]int{}
+	dependents := map[string][]string{}
+	known := map[string]bool{}
+	for _, n := range nodes {
+		known[n.Key] = true
+	}
+	for _, n := range nodes {
+		for _, d := range n.DependsOn {
+			if known[d] {
+				indeg[n.Key]++
+				dependents[d] = append(dependents[d], n.Key)
+			}
+		}
+	}
+	placed := map[string]bool{}
+	var out []GraphNode
+	for len(out) < len(nodes) {
+		progressed := false
+		for _, n := range nodes {
+			if !placed[n.Key] && indeg[n.Key] == 0 {
+				placed[n.Key], progressed = true, true
+				out = append(out, n)
+				for _, c := range dependents[n.Key] {
+					indeg[c]--
+				}
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	return out
 }
 
 // findCycle runs Kahn's algorithm; returns the stuck keys ("a, b") or "".

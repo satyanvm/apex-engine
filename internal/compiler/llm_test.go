@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -91,5 +92,88 @@ func TestLLMProvider(t *testing.T) {
 		if got := llmProvider(model); got != want {
 			t.Errorf("llmProvider(%q) = %q, want %q", model, got, want)
 		}
+	}
+}
+
+func TestLLMProvider_NewProviders(t *testing.T) {
+	for model, want := range map[string]string{
+		"claude-opus-5-5":         "anthropic",
+		"claude-haiku-5-5":        "anthropic",
+		"gpt-5":                   "openai",
+		"o3-mini":                 "openai",
+		"openai/llama-3.3-70b":    "openai",
+		"openai/anthropic/claude": "openai",
+		"gemini-3.5-flash":        "gemini",
+		"ollama/qwen3:8b":         "ollama",
+		"kimi-k3":                 "moonshot",
+	} {
+		if got := llmProvider(model); got != want {
+			t.Errorf("llmProvider(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
+func clearModelEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+		"MOONSHOT_API_KEY", "KIMI_API_KEY", "PLANNER_MODEL", "PLANNER_MAP_MODEL", "APEX_AGENT_MODEL"} {
+		t.Setenv(k, "")
+	}
+}
+
+func TestDefaultsFollowWhicheverKeyIsSet(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	if st := Status(); !st.Ready || st.Map != "claude-haiku-5-5" || st.Reduce != "claude-opus-5-5" {
+		t.Fatalf("anthropic defaults: %+v", st)
+	}
+	clearModelEnv(t)
+	t.Setenv("OPENAI_API_KEY", "k")
+	if st := Status(); !st.Ready || st.Reduce != "gpt-5" {
+		t.Fatalf("openai defaults: %+v", st)
+	}
+}
+
+func TestNoModelIsReportedNotFatal(t *testing.T) {
+	clearModelEnv(t)
+	st := Status()
+	if st.Ready || !strings.Contains(st.Problem, "./apex model") {
+		t.Fatalf("status with no model: %+v", st)
+	}
+}
+
+func TestOpenAICompatibleNeedsNoKeyWithCustomEndpoint(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv("PLANNER_MODEL", "openai/local")
+	t.Setenv("PLANNER_MAP_MODEL", "openai/local")
+	if err := RequirePlannerKeys(); err == nil {
+		t.Fatal("no key and no endpoint: expected an error")
+	}
+	t.Setenv("OPENAI_BASE_URL", "http://localhost:1234/v1")
+	if err := RequirePlannerKeys(); err != nil {
+		t.Fatalf("custom endpoint should need no key: %v", err)
+	}
+}
+
+func TestAnthropicParamsCarryThinkingRoomEffortAndFallback(t *testing.T) {
+	p := anthropicParams("claude-opus-5-5", 16000, "sys", []llmMsg{{Role: "user", Content: "a"}, {Role: "assistant", Content: "b"}})
+	if p.MaxTokens != 16000+anthropicThinkingRoom || p.OutputConfig.Effort != "high" || len(p.Betas) != 1 {
+		t.Fatalf("opus params: %+v", p)
+	}
+	if p := anthropicParams("claude-haiku-5-5", 1024, "sys", nil); p.OutputConfig.Effort != "low" || len(p.Betas) != 0 {
+		t.Fatalf("haiku params: %+v", p)
+	}
+	if p := anthropicParams("claude-haiku-4-5", 1024, "sys", nil); p.OutputConfig.Effort != "" {
+		t.Fatalf("older model must not send effort: %+v", p)
+	}
+}
+
+func TestPlainTextCallsDoNotDemandJSON(t *testing.T) {
+	ctx := context.WithValue(context.Background(), plainTextKey{}, true)
+	if got := systemFor(ctx, "sys"); got != "sys" {
+		t.Errorf("plain text system = %q", got)
+	}
+	if got := systemFor(context.Background(), "sys"); !strings.Contains(got, "JSON") {
+		t.Errorf("json system = %q", got)
 	}
 }

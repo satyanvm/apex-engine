@@ -3,6 +3,11 @@
 services:
   engine:
     ports: !reset []
+    environment:
+      # Local conveniences never apply here, whatever .env says.
+      APEX_ALLOW_PRIVATE_NETWORK: "0"
+      APEX_DEMO_URL: ""
+      APEX_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
   caddy:
     image: caddy:2.10-alpine
     command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN in .env} --to engine:8700

@@ -1,7 +1,7 @@
 {
  "cluster": "builtin",
  "label": "Core",
- "description": "Code-backed platform primitives: triggers, agents, generic tools, control flow, outputs. Executed by apps/reasoner/reasoner/nodes.py, not the generic integration runtime.",
+ "description": "Core steps the engine runs itself: triggers, AI, HTTP, data shaping, control flow and human approval.",
  "nodes": [
   {
    "id": "trigger.manual",
@@ -112,6 +112,28 @@
    "credentials": []
   },
   {
+   "id": "data.transform",
+   "label": "Transform data",
+   "description": "Reshape, filter, sort, group or total data with a jq expression. Exact and free: use this instead of agent.llm whenever the change can be stated as a rule. The expression's input is an object with .input, .outputs.<dependency key>.<field>, and inside a loop .item.",
+   "kind": "action",
+   "runtime": "builtin",
+   "search": "transform map filter select sort group sum count reshape extract jq json data pick fields dedupe merge",
+   "config": [
+    {
+     "key": "expression",
+     "label": "jq expression",
+     "control": "textarea",
+     "required": true,
+     "placeholder": "[.outputs.list_orders.body[] | select(.total > 100) | {id, total}]",
+     "help": "jq syntax, not a {{template}}. Read upstream data as .outputs.<dependency key>.<field>. Wrap in [ ] to return a list."
+    }
+   ],
+   "outputs": [
+    "result"
+   ],
+   "credentials": []
+  },
+  {
    "id": "logic.branch",
    "label": "If / Else",
    "description": "Gate: evaluate a condition; when false, the entire downstream subgraph is skipped.",
@@ -124,7 +146,8 @@
      "label": "Condition",
      "control": "text",
      "required": true,
-     "placeholder": "outputs.fetch.status == 200"
+     "placeholder": "outputs.fetch.status == 200",
+     "help": "A comparison (== != > < >= <= contains), or several joined with && and ||, with ! and parentheses. Example: outputs.fetch.status == 200 && outputs.fetch.body.total > 100"
     }
    ],
    "outputs": [
@@ -145,7 +168,8 @@
      "key": "condition",
      "label": "Keep when",
      "control": "text",
-     "required": true
+     "required": true,
+     "help": "A comparison (== != > < >= <= contains), or several joined with && and ||, with ! and parentheses. Example: outputs.fetch.status == 200 && outputs.fetch.body.total > 100"
     }
    ],
    "outputs": [
@@ -157,7 +181,7 @@
   {
    "id": "logic.loop",
    "label": "Loop",
-   "description": "Fan out: resolve a list and run the downstream branch once per item. Inside the body, {{item}} is the current element and {{loop.<key>.index}} the position; collected results appear as outputs.<key>.results.",
+   "description": "Fan out: resolve a list and run the downstream branch once per item, one item at a time. Inside the body, {{item}} is the current element and {{loop.<key>.index}} its position. Afterwards outputs.<key>.results holds one entry per item, and succeeded/failed count them. A loop cannot contain another loop.",
    "kind": "logic",
    "runtime": "builtin",
    "search": "loop foreach iterate items map fan out each repeat",
@@ -168,12 +192,56 @@
      "control": "text",
      "required": true,
      "placeholder": "outputs.fetch.items"
+    },
+    {
+     "key": "onError",
+     "label": "When an item fails",
+     "control": "select",
+     "required": false,
+     "options": [
+      "stop",
+      "continue"
+     ],
+     "help": "stop (default) fails the run at the first failed item. continue records the failure in results and errors, and carries on with the next item."
     }
    ],
    "outputs": [
     "items",
     "count",
-    "results"
+    "results",
+    "succeeded",
+    "failed",
+    "errors"
+   ],
+   "credentials": []
+  },
+  {
+   "id": "logic.wait",
+   "label": "Wait",
+   "description": "Pause the run, then continue. The pause survives restarts. Give seconds, or until as a time.",
+   "kind": "logic",
+   "runtime": "builtin",
+   "search": "wait delay sleep pause later timer until hold",
+   "config": [
+    {
+     "key": "seconds",
+     "label": "Seconds",
+     "control": "text",
+     "required": false,
+     "placeholder": "3600",
+     "help": "How long to pause, at most 30 days (2592000)."
+    },
+    {
+     "key": "until",
+     "label": "Until",
+     "control": "text",
+     "required": false,
+     "placeholder": "2026-12-01T09:00:00Z",
+     "help": "A time to wait for, instead of seconds. Supports {{input.x}}."
+    }
+   ],
+   "outputs": [
+    "seconds"
    ],
    "credentials": []
   },
@@ -195,7 +263,9 @@
    ],
    "outputs": [
     "approved",
-    "note"
+    "note",
+    "decidedBy",
+    "message"
    ],
    "credentials": []
   }

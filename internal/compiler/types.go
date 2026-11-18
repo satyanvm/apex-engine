@@ -61,6 +61,7 @@ func ollamaHost() string {
 
 // Complete runs one model call for agent.llm nodes.
 func Complete(ctx context.Context, model, system, user string, timeout time.Duration) (string, error) {
+	ctx = context.WithValue(ctx, plainTextKey{}, true) // a node's answer is prose
 	return planLLMWith(ctx, model, 8192, timeout, system, []llmMsg{{Role: "user", Content: user}})
 }
 

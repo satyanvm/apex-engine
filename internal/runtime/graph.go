@@ -50,6 +50,16 @@ func newGraph(nodes []compiler.GraphNode) (*graph, error) {
 			return nil, fmt.Errorf("cycle detected in graph")
 		}
 	}
+	for _, n := range g.ordered {
+		if n.Type != "logic.loop" {
+			continue
+		}
+		for _, k := range g.loopBody(n.Key) {
+			if g.byKey[k].Type == "logic.loop" {
+				return nil, fmt.Errorf("loop %s is inside loop %s: nested loops are not supported", k, n.Key)
+			}
+		}
+	}
 	return g, nil
 }
 
@@ -82,6 +92,16 @@ func readsLoopResults(n compiler.GraphNode, loop string) bool {
 		return false
 	}
 	return strings.Contains(string(raw), "outputs."+loop+".results")
+}
+
+// readsLoopItems reports whether a body node uses the loop's whole list, rather
+// than the current item.
+func readsLoopItems(n compiler.GraphNode, loop string) bool {
+	raw, err := json.Marshal(n.Config)
+	if err != nil {
+		return true
+	}
+	return strings.Contains(string(raw), "outputs."+loop+".items")
 }
 
 // loopBody is the subgraph every path into which passes through the loop. A join

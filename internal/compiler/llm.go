@@ -1,24 +1,20 @@
 package compiler
 
-// llm.go is the control-plane model client used by the prompt compiler. Any of
-// three providers can serve either tier (ollama/<model> runs locally, see
-// planLLMOllama); the original split, tiered by difficulty, was:
+// llm.go is the control-plane model client used by the prompt compiler. The
+// provider follows the model name, so either tier can be re-pointed with
+// PLANNER_MAP_MODEL / PLANNER_MODEL and the matching key, nothing else:
 //
-//   ROUTE + MAP  — Gemini (GEMINI_API_KEY). Cheap classification over the cluster
-//                  directory and per-cluster node indexes. The same key also
-//                  serves the embedding prefilter (piecesembed.go).
-//   REDUCE       — Kimi (MOONSHOT_API_KEY, OpenAI-compatible endpoint). Graph
-//                  authorship is the hard part, so it gets the strongest model.
+//   claude-*                  Anthropic (ANTHROPIC_API_KEY), see llm_anthropic.go
+//   gpt-*, o1/o3/o4-*         OpenAI (OPENAI_API_KEY)
+//   openai/<model>            any OpenAI-compatible endpoint (OPENAI_BASE_URL)
+//   kimi-*, moonshot-*        Moonshot (MOONSHOT_API_KEY)
+//   ollama/<model>            a local Ollama server, no key
+//   anything else             Gemini (GEMINI_API_KEY)
 //
-// The provider is inferred from the model name: kimi-*/moonshot-* goes to
-// Moonshot, everything else to Gemini — so either tier can be re-pointed with
-// PLANNER_MAP_MODEL / PLANNER_MODEL and the matching key, nothing else.
-//
-// It used to carry a hard rule that it must NEVER be on the critical path — every
-// caller fell back to deterministic planning when it errored. That rule is gone. A
-// prompt the model could not compile is a FAILURE, reported with its reason, not a
-// fixed trigger→research→report graph wearing the user's prompt as a label. Every
-// error returned from here is expected to reach the user verbatim.
+// With no explicit model, the tiers default to whichever provider has a key
+// (defaultModels). A prompt the model could not compile is a failure, reported
+// with its reason: every error returned from here is expected to reach the user
+// verbatim.
 
 import (
 	"bytes"
@@ -46,8 +42,49 @@ const jsonOnly = "\nRespond with a single JSON object and nothing else."
 // Compilation model tiers. Map wants cheap+fast over a large index; reduce wants
 // the strongest available, because graph authorship is the hard part. Both
 // env-overridable.
-func mapModel() string    { return envOr("PLANNER_MAP_MODEL", "gemini-3.1-flash-lite") }
-func reduceModel() string { return envOr("PLANNER_MODEL", "gemini-3.5-flash") }
+func mapModel() string {
+	m, _ := defaultModels()
+	return envOr("PLANNER_MAP_MODEL", m)
+}
+
+func reduceModel() string {
+	_, r := defaultModels()
+	return envOr("PLANNER_MODEL", r)
+}
+
+// defaultModels picks each tier's model from whichever provider has a key. Gemini
+// stays the default when none does, so the missing-key error has a concrete fix.
+func defaultModels() (mapName, reduce string) {
+	switch {
+	case strings.TrimSpace(os.Getenv("GEMINI_API_KEY")) != "":
+		return "gemini-3.1-flash-lite", "gemini-3.5-flash"
+	case anthropicKey() != "":
+		return "claude-haiku-5-5", "claude-opus-5-5"
+	case strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "":
+		return "gpt-5-mini", "gpt-5"
+	case moonshotKey() != "":
+		return "kimi-k2.6", "kimi-k3"
+	}
+	return "gemini-3.1-flash-lite", "gemini-3.5-flash"
+}
+
+// errNoModel is what a compile reports on an install with no model configured.
+var errNoModel = errors.New("No model is connected, so prompts cannot be compiled. " +
+	"Run ./apex model, or set one of GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY " +
+	"(or PLANNER_MODEL=ollama/<model> for a local model) in .env. Saved workflows without AI steps still run.")
+
+// plainTextKey marks a call whose answer is prose rather than a JSON object.
+type plainTextKey struct{}
+
+func wantsJSON(ctx context.Context) bool { return ctx.Value(plainTextKey{}) == nil }
+
+// systemFor adds the JSON-only demand to calls that parse their answer.
+func systemFor(ctx context.Context, system string) string {
+	if wantsJSON(ctx) {
+		return system + jsonOnly
+	}
+	return system
+}
 
 // isMoonshotModel routes a model id to its provider: Kimi models run on the
 // Moonshot API (OpenAI-compatible), everything else on Gemini.
@@ -88,28 +125,74 @@ func RequireMoonshotKey() error {
 // touch: Gemini always (route, map, embeddings), Moonshot when either tier is
 // pointed at a Kimi model.
 func RequirePlannerKeys() error {
+	if os.Getenv("PLANNER_MODEL") == "" && os.Getenv("PLANNER_MAP_MODEL") == "" && !anyProviderKey() {
+		return errNoModel
+	}
 	for _, model := range []string{mapModel(), reduceModel()} {
+		var err error
 		switch llmProvider(model) {
 		case "gemini":
-			if err := RequireGeminiKey(); err != nil {
-				return err
-			}
+			err = RequireGeminiKey()
 		case "moonshot":
-			if err := RequireMoonshotKey(); err != nil {
-				return err
-			}
+			err = RequireMoonshotKey()
+		case "anthropic":
+			err = RequireAnthropicKey()
+		case "openai":
+			err = RequireOpenAIKey()
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func anyProviderKey() bool {
+	return strings.TrimSpace(os.Getenv("GEMINI_API_KEY")) != "" || anthropicKey() != "" ||
+		strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "" || moonshotKey() != ""
+}
+
+// RequireOpenAIKey demands a key unless a custom endpoint is configured, since
+// local OpenAI-compatible servers usually take none.
+func RequireOpenAIKey() error {
+	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && os.Getenv("OPENAI_BASE_URL") == "" {
+		return errors.New("OPENAI_API_KEY is required for this model. Set it in .env, " +
+			"or set OPENAI_BASE_URL for an OpenAI-compatible server that takes no key")
+	}
+	return nil
+}
+
+// ModelStatus says whether compiles can run and on what.
+type ModelStatus struct {
+	Ready   bool   `json:"ready"`
+	Problem string `json:"problem,omitempty"`
+	Map     string `json:"map"`
+	Reduce  string `json:"reduce"`
+	Agent   string `json:"agent"`
+}
+
+// Status reports the model configuration without calling a provider.
+func Status() ModelStatus {
+	st := ModelStatus{Ready: true, Map: mapModel(), Reduce: reduceModel(), Agent: AgentModel()}
+	if err := RequirePlannerKeys(); err != nil {
+		st.Ready, st.Problem = false, err.Error()
+	}
+	return st
 }
 
 // llmProvider routes a model id to its provider: ollama/<model> runs on a local
 // Ollama server (no key, no quota), kimi-*/moonshot-* on Moonshot, everything
 // else on Gemini.
 func llmProvider(model string) string {
+	l := strings.ToLower(model)
 	switch {
 	case strings.HasPrefix(model, "ollama/"):
 		return "ollama"
+	case strings.HasPrefix(model, "openai/"), strings.HasPrefix(l, "gpt-"),
+		strings.HasPrefix(l, "o1-"), strings.HasPrefix(l, "o3-"), strings.HasPrefix(l, "o4-"):
+		return "openai"
+	case strings.HasPrefix(l, "claude-"):
+		return "anthropic"
 	case isMoonshotModel(model):
 		return "moonshot"
 	}
@@ -127,7 +210,22 @@ func planLLMWith(ctx context.Context, model string, maxTokens int, timeout time.
 	case "ollama":
 		return planLLMOllama(ctx, model, maxTokens, timeout, system, msgs)
 	case "moonshot":
-		return planLLMMoonshot(ctx, model, maxTokens, timeout, system, msgs)
+		if err := RequireMoonshotKey(); err != nil {
+			return "", err
+		}
+		return planLLMChatCompletions(ctx, moonshotBaseURL(), moonshotKey(), "moonshot", model, model, "max_tokens", maxTokens, timeout, system, msgs)
+	case "openai":
+		if err := RequireOpenAIKey(); err != nil {
+			return "", err
+		}
+		base := envOr("OPENAI_BASE_URL", openAIBaseURL)
+		tokensField := "max_tokens"
+		if base == openAIBaseURL { // OpenAI's own reasoning models reject max_tokens
+			tokensField = "max_completion_tokens"
+		}
+		return planLLMChatCompletions(ctx, base, strings.TrimSpace(os.Getenv("OPENAI_API_KEY")), "openai", model, strings.TrimPrefix(model, "openai/"), tokensField, maxTokens, timeout, system, msgs)
+	case "anthropic":
+		return planLLMAnthropic(ctx, model, maxTokens, timeout, system, msgs)
 	}
 	return planLLMGemini(ctx, model, maxTokens, timeout, system, msgs)
 }
@@ -157,7 +255,7 @@ func planLLMOllama(ctx context.Context, model string, maxTokens int, timeout tim
 	defer cancel()
 
 	chat := make([]map[string]string, 0, len(msgs)+1)
-	chat = append(chat, map[string]string{"role": "system", "content": system + jsonOnly})
+	chat = append(chat, map[string]string{"role": "system", "content": systemFor(ctx, system)})
 	for _, m := range msgs {
 		role := "user"
 		if m.Role == "assistant" {
@@ -165,17 +263,20 @@ func planLLMOllama(ctx context.Context, model string, maxTokens int, timeout tim
 		}
 		chat = append(chat, map[string]string{"role": role, "content": m.Content})
 	}
-	body, _ := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":    strings.TrimPrefix(model, "ollama/"),
 		"messages": chat,
 		"stream":   false,
-		"format":   "json",
 		"think":    false,
 		"options": map[string]any{
 			"num_ctx":     ollamaNumCtx(),
 			"num_predict": maxTokens,
 		},
-	})
+	}
+	if wantsJSON(ctx) {
+		payload["format"] = "json"
+	}
+	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, ollamaHost()+"/api/chat", bytes.NewReader(body))
 	req.Header.Set("content-type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -241,16 +342,16 @@ func planLLMGemini(ctx context.Context, model string, maxTokens int, timeout tim
 	if is25 {
 		thinking = budget
 	}
-	genCfg := map[string]any{
-		"maxOutputTokens":  maxTokens + thinking,
-		"responseMimeType": "application/json",
+	genCfg := map[string]any{"maxOutputTokens": maxTokens + thinking}
+	if wantsJSON(ctx) {
+		genCfg["responseMimeType"] = "application/json"
 	}
 	if is25 {
 		genCfg["thinkingConfig"] = map[string]any{"thinkingBudget": budget}
 	}
 	body, _ := json.Marshal(map[string]any{
 		"system_instruction": map[string]any{
-			"parts": []map[string]string{{"text": system + jsonOnly}},
+			"parts": []map[string]string{{"text": systemFor(ctx, system)}},
 		},
 		"contents":         contents,
 		"generationConfig": genCfg,
@@ -427,47 +528,47 @@ func geminiThinkingBudget(model string, maxTokens int) int {
 	return 8192
 }
 
-// planLLMMoonshot is the Kimi path: OpenAI-compatible chat completions against
-// api.moonshot.ai. The contract mirrors the Gemini one — the system message
-// carries the instruction plus the JSON-only demand, response_format pins object
-// output, and a truncated answer is reported as the token cap it is, not a parse
-// error several frames down.
-func planLLMMoonshot(ctx context.Context, model string, maxTokens int, timeout time.Duration, system string, msgs []llmMsg) (string, error) {
-	if err := RequireMoonshotKey(); err != nil {
-		return "", err
-	}
+const openAIBaseURL = "https://api.openai.com/v1"
+
+// planLLMChatCompletions is the path for every OpenAI-compatible API (Moonshot,
+// OpenAI, and anything behind OPENAI_BASE_URL). The system message carries the
+// instruction plus the JSON-only demand, response_format pins object output, and
+// a truncated answer is reported as the token cap it is, not a parse error
+// several frames down. label names the model in errors; apiModel is what is sent.
+func planLLMChatCompletions(ctx context.Context, baseURL, key, provider, label, apiModel, tokensField string, maxTokens int, timeout time.Duration, system string, msgs []llmMsg) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	oaiMsgs := make([]map[string]string, 0, len(msgs)+1)
-	oaiMsgs = append(oaiMsgs, map[string]string{"role": "system", "content": system + jsonOnly})
+	chat := make([]map[string]string, 0, len(msgs)+1)
+	chat = append(chat, map[string]string{"role": "system", "content": systemFor(ctx, system)})
 	for _, m := range msgs {
 		role := "user"
 		if m.Role == "assistant" {
 			role = "assistant"
 		}
-		oaiMsgs = append(oaiMsgs, map[string]string{"role": role, "content": m.Content})
+		chat = append(chat, map[string]string{"role": role, "content": m.Content})
 	}
-	body, _ := json.Marshal(map[string]any{
-		"model":           model,
-		"messages":        oaiMsgs,
-		"max_tokens":      maxTokens,
-		"response_format": map[string]string{"type": "json_object"},
-	})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, moonshotBaseURL()+"/chat/completions", bytes.NewReader(body))
+	payload := map[string]any{"model": apiModel, "messages": chat, tokensField: maxTokens}
+	if wantsJSON(ctx) {
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(baseURL, "/")+"/chat/completions", bytes.NewReader(body))
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("authorization", "Bearer "+moonshotKey())
+	if key != "" {
+		req.Header.Set("authorization", "Bearer "+key)
+	}
 	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "", fmt.Errorf("%s: timed out: %w", model, errTimedOut)
+			return "", fmt.Errorf("%s: timed out: %w", label, errTimedOut)
 		}
-		return "", fmt.Errorf("%s: %w", model, err)
+		return "", fmt.Errorf("%s: %w", label, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: moonshot %d: %s", model, resp.StatusCode, truncateStr(string(raw), 300))
+		return "", fmt.Errorf("%s: %s %d: %s", label, provider, resp.StatusCode, truncateStr(string(raw), 300))
 	}
 	var parsed struct {
 		Choices []struct {
@@ -478,18 +579,18 @@ func planLLMMoonshot(ctx context.Context, model string, maxTokens int, timeout t
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", fmt.Errorf("%s: unparseable response: %w", model, err)
+		return "", fmt.Errorf("%s: unparseable response: %w", label, err)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("%s: moonshot returned no choices: %s", model, truncateStr(string(raw), 300))
+		return "", fmt.Errorf("%s: %s returned no choices: %s", label, provider, truncateStr(string(raw), 300))
 	}
 	choice := parsed.Choices[0]
 	if choice.FinishReason == "length" {
-		return "", fmt.Errorf("%s hit the %d-token output cap before finishing its JSON: %w", model, maxTokens, errOutputCapped)
+		return "", fmt.Errorf("%s hit the %d-token output cap before finishing its JSON: %w", label, maxTokens, errOutputCapped)
 	}
 	out := choice.Message.Content
 	if strings.TrimSpace(out) == "" {
-		return "", fmt.Errorf("%s returned no text (finish reason %q)", model, choice.FinishReason)
+		return "", fmt.Errorf("%s returned no text (finish reason %q)", label, choice.FinishReason)
 	}
 	return out, nil
 }

@@ -167,6 +167,11 @@ type MCPTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
+	// Annotations are the server's hints. readOnlyHint lets a preview run the
+	// tool, because the server says it changes nothing.
+	Annotations struct {
+		ReadOnlyHint bool `json:"readOnlyHint"`
+	} `json:"annotations"`
 }
 
 // ListTools returns every tool, following pagination.
@@ -290,7 +295,7 @@ func MCPNodes(slug string, tools []MCPTool) []compiler.CatalogNode {
 		nodes = append(nodes, compiler.CatalogNode{
 			ID: "mcp." + slug + "." + id, Label: clip(label, 80), Description: clip(desc, maxDescLen),
 			Kind: "action", Runtime: "mcp", Config: fields, Outputs: []string{"result"},
-			Exec: map[string]any{"tool": t.Name, "types": types},
+			Exec: map[string]any{"tool": t.Name, "types": types, "readOnly": t.Annotations.ReadOnlyHint},
 		})
 	}
 	return nodes

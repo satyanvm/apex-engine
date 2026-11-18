@@ -97,3 +97,53 @@ func TestValidateRefs_PieceResultOutput(t *testing.T) {
 		t.Fatalf("piece actions expose exactly `result`; got %q", got)
 	}
 }
+
+func TestValidateRefs_PathsIntoPlainValues(t *testing.T) {
+	cat := LoadCatalog()
+	gate := GraphNode{Key: "g", Type: "logic.branch", Config: map[string]any{"condition": "input.ok == true"}}
+	loop := func(items string) []GraphNode {
+		return []GraphNode{gate, {Key: "l", Type: "logic.loop", DependsOn: []string{"g"}, Config: map[string]any{"items": items}}}
+	}
+	inputs := map[string]bool{"ok": true}
+	// The exact reference qwen3:8b wrote: a boolean treated as an object.
+	got := strings.Join(validateRefs(loop("outputs.g.passed.body"), cat, inputs), "; ")
+	if !strings.Contains(got, "plain value") {
+		t.Errorf("path into a boolean: %q", got)
+	}
+	// Reading the boolean is fine; looping over it is not, and used to fail
+	// only when the run reached the loop.
+	say := []GraphNode{gate, {Key: "say", Type: "agent.llm", DependsOn: []string{"g"}, Config: map[string]any{"prompt": "passed: {{outputs.g.passed}}"}}}
+	if got := validateRefs(say, cat, inputs); len(got) != 0 {
+		t.Errorf("the boolean itself is fine: %v", got)
+	}
+	if got := strings.Join(validateRefs(loop("outputs.g.passed"), cat, inputs), "; "); !strings.Contains(got, "not a list") {
+		t.Errorf("a loop over a boolean: %q", got)
+	}
+}
+
+func TestValidateRefs_Conditions(t *testing.T) {
+	cat := LoadCatalog()
+	graph := func(cond string) []GraphNode {
+		return []GraphNode{
+			{Key: "t", Type: "trigger.manual"},
+			{Key: "g", Type: "logic.branch", DependsOn: []string{"t"}, Config: map[string]any{"condition": cond}},
+		}
+	}
+	inputs := map[string]bool{"who": true}
+	for cond, wantErr := range map[string]string{
+		"input.who == nobody":              "",
+		"{{input.who}} == 'input.missing'": "",
+		`input.who == "outputs.nope.x"`:    "",
+		"input.missing == 1":               "input.missing is not in defaultInput",
+		"outputs.nope.x == 1":              "there is no node 'nope'",
+		"{{outputs.nope.x}} == 1":          "there is no node 'nope'",
+	} {
+		got := strings.Join(validateRefs(graph(cond), cat, inputs), "; ")
+		if wantErr == "" && got != "" {
+			t.Errorf("%q: want valid, got %s", cond, got)
+		}
+		if wantErr != "" && !strings.Contains(got, wantErr) {
+			t.Errorf("%q: want %q, got %q", cond, wantErr, got)
+		}
+	}
+}

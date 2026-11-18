@@ -162,7 +162,7 @@ func authorGraphSections(ctx context.Context, cat *Catalog, system, prompt strin
 func authorSection(ctx context.Context, cat *Catalog, system, prompt string, outline graphOutline, idx int, prior []GraphNode, inputKeys map[string]bool) ([]GraphNode, error) {
 	sec := outline.Sections[idx]
 	msgs := []llmMsg{{Role: "user", Content: sectionRequest(cat, prompt, outline, idx, prior, inputKeys)}}
-	const attempts = 3 // 1 author + 2 repairs
+	attempts := authorAttempts()
 	var lastComplaint string
 	timeouts := 0
 	for i := 0; i < attempts; i++ {

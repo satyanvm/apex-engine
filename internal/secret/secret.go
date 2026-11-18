@@ -4,7 +4,9 @@ package secret
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,7 +14,10 @@ import (
 )
 
 // Box seals and opens values with one key.
-type Box struct{ aead cipher.AEAD }
+type Box struct {
+	aead cipher.AEAD
+	key  []byte
+}
 
 // New builds a Box from a base64-encoded 32-byte key.
 func New(b64Key string) (*Box, error) {
@@ -31,7 +36,15 @@ func New(b64Key string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	return &Box{aead: aead, key: key}, nil
+}
+
+// Derive returns a key for a separate purpose, such as signing a tenant's run
+// events, so the sealing key itself is never handed out.
+func (b *Box) Derive(label string) []byte {
+	mac := hmac.New(sha256.New, b.key)
+	mac.Write([]byte(label))
+	return mac.Sum(nil)
 }
 
 // Seal encrypts plain, binding it to aad (the owning tenant and catalog) so a
